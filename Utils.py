@@ -37,15 +37,48 @@ import ruamel.yaml
 yaml = ruamel.yaml.YAML()
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(code_dir)
-# sys.path.append(f"{code_dir}/mycpp/build")
+# Ensure the local compiled mycpp extension (if built) is importable.
+build_mycpp_path = os.path.join(code_dir, 'mycpp', 'build')
+if os.path.isdir(build_mycpp_path):
+  # Put it first so the local build is preferred over any system-installed package
+  if build_mycpp_path not in sys.path:
+    sys.path.insert(0, build_mycpp_path)
+
 try:
   import kornia
 except:
   kornia = None
+
 try:
   import mycpp
-except:
+except Exception as e:
+  # If local build exists but import still fails, log the error for easier debugging
+  logging.info(f"mycpp import failed: {e}")
   mycpp = None
+# If import succeeded but the expected symbol is missing (or import failed),
+# try to load the compiled extension directly from the local build if present.
+try:
+  if mycpp is None or not hasattr(mycpp, 'cluster_poses'):
+    build_so = os.path.join(code_dir, 'mycpp', 'build', 'mycpp.so')
+    if os.path.exists(build_so):
+      import importlib.util
+      spec = importlib.util.spec_from_file_location('mycpp', build_so)
+      if spec is not None and spec.loader is not None:
+        mod = importlib.util.module_from_spec(spec)
+        try:
+          spec.loader.exec_module(mod)
+          mycpp = mod
+          logging.info(f'Loaded mycpp extension from {build_so}')
+        except Exception as e:
+          logging.info(f'Failed to exec_module for {build_so}: {e}')
+    else:
+      logging.info(f'Local mycpp build not found at {build_so}')
+  # Final check: if still missing, set to None so callers can handle it gracefully
+  if mycpp is not None and not hasattr(mycpp, 'cluster_poses'):
+    logging.info('mycpp module imported but does not expose cluster_poses')
+    mycpp = None
+except Exception as e:
+  logging.info(f'Error while attempting to load local mycpp extension: {e}')
 try:
   from bundlesdf.mycuda import common
 except:

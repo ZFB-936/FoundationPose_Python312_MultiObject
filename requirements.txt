@@ -1,23 +1,26 @@
-# Model-based pose estimation and tracking (Python 3.9, CUDA 12.8).
+# Model-based pose estimation and tracking (Python 3.12, CUDA 12.8).
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
 --extra-index-url https://download.pytorch.org/whl/cu128
-torch==2.7.1+cu128
-torchvision==0.22.1+cu128
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
 
 # Mesh, RGB-D processing, and inference.
-numpy==1.26.4
-scipy==1.12.0
-trimesh==4.2.2
-open3d==0.18.0
-opencv-python==4.9.0.80
-imageio==2.34.0
-pillow>=10,<12
-kornia==0.7.2
-warp-lang==1.0.2
-transformations==2024.6.1
-omegaconf==2.3.0
-pyyaml==6.0.1
-ruamel.yaml==0.18.6
+numpy==2.5.4
+scipy==1.18.1
+trimesh==5.2.0
+open3d==0.20.0
+opencv-python==5.0.0.93
+imageio==2.38.1
+pillow==13.0.0
+kornia==0.9.0
+warp-lang==1.18.0
+transformations==2026.8.8
+omegaconf==2.4.0
+pyyaml==6.0.3
+ruamel.yaml==0.19.1
 
-# Build mycpp and the NVDiffRast renderer (installed separately; see readme.md).
-pybind11==2.12.0
-ninja==1.11.1.1
+# Build tools used by build_all.sh.
+setuptools>=64
+wheel
+pybind11==3.1.0
+ninja==1.13.2

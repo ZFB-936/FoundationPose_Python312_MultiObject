@@ -96,7 +96,7 @@ def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_rati
   normalAs = None
   normalBs = None
 
-  Ks = torch.as_tensor(K, dtype=torch.float).reshape(1,3,3).expand(len(rgbAs),3,3)
+  Ks = torch.as_tensor(K, dtype=torch.float, device='cuda').reshape(1,3,3).expand(len(rgbAs),3,3)
   mesh_diameters = torch.ones((len(rgbAs)), dtype=torch.float, device='cuda')*mesh_diameter
 
   pose_data = BatchPoseData(rgbAs=rgbAs, rgbBs=rgbBs, depthAs=depthAs, depthBs=depthBs, normalAs=normalAs, normalBs=normalBs, poseA=poseAs, xyz_mapAs=xyz_mapAs, tf_to_crops=tf_to_crops, Ks=Ks, mesh_diameters=mesh_diameters)
@@ -141,7 +141,7 @@ class ScorePredictor:
     self.model = ScoreNetMultiPair(cfg=self.cfg, c_in=self.cfg['c_in']).cuda()
 
     logging.info(f"Using pretrained model from {ckpt_dir}")
-    ckpt = torch.load(ckpt_dir)
+    ckpt = torch.load(ckpt_dir, map_location="cpu", weights_only=True)
     if 'model' in ckpt:
       ckpt = ckpt['model']
     self.model.load_state_dict(ckpt)
@@ -183,7 +183,7 @@ class ScorePredictor:
         if pose_data.normalAs is not None:
           A = torch.cat([A, pose_data.normalAs.cuda().float()], dim=1)
           B = torch.cat([B, pose_data.normalBs.cuda().float()], dim=1)
-        with torch.cuda.amp.autocast(enabled=self.amp):
+        with torch.amp.autocast("cuda", enabled=self.amp):
           output = self.model(A, B, L=len(A))
         scores_cur = output["score_logit"].float().reshape(-1)
         ids.append(scores_cur.argmax()+b)

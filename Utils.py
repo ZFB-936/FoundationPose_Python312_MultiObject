@@ -26,7 +26,10 @@ yaml = ruamel.yaml.YAML()
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(code_dir)
 # Ensure the local compiled mycpp extension (if built) is importable.
-build_mycpp_path = os.path.join(code_dir, 'mycpp', 'build')
+build_mycpp_root = os.path.join(code_dir, 'mycpp', 'build')
+build_mycpp_path = os.path.join(build_mycpp_root, sys.implementation.cache_tag)
+if not os.path.isdir(build_mycpp_path):
+  build_mycpp_path = build_mycpp_root
 if os.path.isdir(build_mycpp_path):
   # Put it first so the local build is preferred over any system-installed package
   if build_mycpp_path not in sys.path:
@@ -47,7 +50,7 @@ except Exception as e:
 # try to load the compiled extension directly from the local build if present.
 try:
   if mycpp is None or not hasattr(mycpp, 'cluster_poses'):
-    build_so = os.path.join(code_dir, 'mycpp', 'build', 'mycpp.so')
+    build_so = os.path.join(build_mycpp_path, 'mycpp.so')
     if os.path.exists(build_so):
       import importlib.util
       spec = importlib.util.spec_from_file_location('mycpp', build_so)

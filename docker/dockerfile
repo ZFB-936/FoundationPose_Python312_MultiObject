@@ -10,18 +10,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh \
     && bash /tmp/miniconda.sh -b -p /opt/conda \
     && rm /tmp/miniconda.sh \
-    && /opt/conda/bin/conda create -y -n foundationpose python=3.9 \
+    && /opt/conda/bin/conda create -y -n foundationpose python=3.12 \
     && /opt/conda/bin/conda clean -afy
 
 ENV PATH=/opt/conda/envs/foundationpose/bin:/opt/conda/bin:${PATH}
 ENV CUDA_HOME=/usr/local/cuda
 ENV OPENCV_IO_ENABLE_OPENEXR=1
+ENV PYTHONNOUSERSITE=1
+
+# Set to the target GPU architecture; 12.0 is the tested RTX 5060 Ti.
+ARG TORCH_CUDA_ARCH_LIST=12.0
+ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}
+ENV MAX_JOBS=4
 
 # Build from the repository root: docker build -f docker/dockerfile -t foundationpose .
 COPY requirements.txt /tmp/foundationpose-requirements.txt
 RUN python -m pip install --no-cache-dir -r /tmp/foundationpose-requirements.txt \
-    && python -m pip install --no-cache-dir --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git \
     && rm /tmp/foundationpose-requirements.txt
 
 WORKDIR /workspace/FoundationPose
+COPY third_party/nvdiffrast third_party/nvdiffrast
+COPY mycpp/CMakeLists.txt mycpp/CMakeLists.txt
+COPY mycpp/include mycpp/include
+COPY mycpp/src mycpp/src
+COPY build_all.sh build_all_conda.sh ./
+RUN bash build_all.sh
 CMD ["bash"]

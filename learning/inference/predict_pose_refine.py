@@ -131,7 +131,7 @@ class PoseRefinePredictor:
     self.model = RefineNet(cfg=self.cfg, c_in=self.cfg['c_in']).cuda()
 
     logging.info(f"Using pretrained model from {ckpt_dir}")
-    ckpt = torch.load(ckpt_dir)
+    ckpt = torch.load(ckpt_dir, map_location="cpu", weights_only=True)
     if 'model' in ckpt:
       ckpt = ckpt['model']
     self.model.load_state_dict(ckpt)
@@ -148,7 +148,6 @@ class PoseRefinePredictor:
     @rgb: np array (H,W,3)
     @ob_in_cams: np array (N,4,4)
     '''
-    torch.set_default_tensor_type('torch.cuda.FloatTensor')
     logging.info(f'ob_in_cams:{ob_in_cams.shape}')
     tf_to_center = np.eye(4)
     ob_centered_in_cams = ob_in_cams
@@ -183,7 +182,7 @@ class PoseRefinePredictor:
         A = torch.cat([pose_data.rgbAs[b:b+bs].cuda(), pose_data.xyz_mapAs[b:b+bs].cuda()], dim=1).float()
         B = torch.cat([pose_data.rgbBs[b:b+bs].cuda(), pose_data.xyz_mapBs[b:b+bs].cuda()], dim=1).float()
         logging.info("forward start")
-        with torch.cuda.amp.autocast(enabled=self.amp):
+        with torch.amp.autocast("cuda", enabled=self.amp):
           output = self.model(A,B)
         for k in output:
           output[k] = output[k].float()

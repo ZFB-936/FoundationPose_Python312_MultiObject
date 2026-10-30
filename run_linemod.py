@@ -8,19 +8,13 @@
 
 
 from Utils import *
-import json,uuid,joblib,os,sys
-import scipy.spatial as spatial
-from multiprocessing import Pool
-import multiprocessing
-from functools import partial
-from itertools import repeat
-import itertools
-from datareader import *
-from estimater import *
+import os, sys
+from datareader import LinemodReader
+from estimater import FoundationPose
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/mycpp/build')
 import yaml
-
+import re
 
 
 def get_mask(reader, i_frame, ob_id, detect_type):
@@ -47,7 +41,6 @@ def get_mask(reader, i_frame, ob_id, detect_type):
   return valid
 
 
-
 def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=0, ob_id=None, device='cuda:0'):
   torch.cuda.set_device(device)
   est.to_device(device)
@@ -57,6 +50,7 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=
 
   for i, i_frame in enumerate(i_frames):
     logging.info(f"{i}/{len(i_frames)}, i_frame:{i_frame}, ob_id:{ob_id}")
+    print("\n### ", f"{i}/{len(i_frames)}, i_frame:{i_frame}, ob_id:{ob_id}")
     video_id = reader.get_video_id()
     color = reader.get_color(i_frame)
     depth = reader.get_depth(i_frame)
@@ -84,15 +78,15 @@ def run_pose_estimation_worker(reader, i_frames, est:FoundationPose=None, debug=
 
     result[video_id][id_str][ob_id] = pose
 
-  return result
+  return result, pose
 
 
 def run_pose_estimation():
   wp.force_load(device='cuda')
-  reader_tmp = LinemodReader(f'{opt.linemod_dir}/lm_test_all/test/000002', split=None)
+  reader_tmp = LinemodReader(opt.linemod_dir, split=None)
+  print("## opt.linemod_dir:", opt.linemod_dir)
 
   debug = opt.debug
-  use_reconstructed_mesh = opt.use_reconstructed_mesh
   debug_dir = opt.debug_dir
 
   res = NestDict()
@@ -100,28 +94,47 @@ def run_pose_estimation():
   mesh_tmp = trimesh.primitives.Box(extents=np.ones((3)), transform=np.eye(4)).to_mesh()
   est = FoundationPose(model_pts=mesh_tmp.vertices.copy(), model_normals=mesh_tmp.vertex_normals.copy(), symmetry_tfs=None, mesh=mesh_tmp, scorer=None, refiner=None, glctx=glctx, debug_dir=debug_dir, debug=debug)
 
-  for ob_id in reader_tmp.ob_ids:
-    ob_id = int(ob_id)
-    if use_reconstructed_mesh:
-      mesh = reader_tmp.get_reconstructed_mesh(ob_id, ref_view_dir=opt.ref_view_dir)
-    else:
-      mesh = reader_tmp.get_gt_mesh(ob_id)
-    symmetry_tfs = reader_tmp.symmetry_tfs[ob_id]
+  # ob_id
+  match = re.search(r'\d+$', opt.linemod_dir)
+  if match:
+      last_number = match.group()
+      ob_id = int(last_number)
+  else:
+      print("No digits found at the end of the string")
+
+  # for ob_id in reader_tmp.ob_ids:
+  if ob_id:
+    mesh = reader_tmp.get_gt_mesh(ob_id)
+    # symmetry_tfs = reader_tmp.symmetry_tfs[ob_id]  # !!!!!!!!!!!!!!!!
 
     args = []
 
-    video_dir = f'{opt.linemod_dir}/lm_test_all/test/{ob_id:06d}'
-    reader = LinemodReader(video_dir, split=None)
+    reader = LinemodReader(opt.linemod_dir, split=None)
     video_id = reader.get_video_id()
-    est.reset_object(model_pts=mesh.vertices.copy(), model_normals=mesh.vertex_normals.copy(), symmetry_tfs=symmetry_tfs, mesh=mesh)
+    # est.reset_object(model_pts=mesh.vertices.copy(), model_normals=mesh.vertex_normals.copy(), symmetry_tfs=symmetry_tfs, mesh=mesh)  # raw
+    est.reset_object(model_pts=mesh.vertices.copy(), model_normals=mesh.vertex_normals.copy(), mesh=mesh) # !!!!!!!!!!!!!!!!
 
+    print("### len(reader.color_files):", len(reader.color_files))
     for i in range(len(reader.color_files)):
       args.append((reader, [i], est, debug, ob_id, "cuda:0"))
 
+    # vis Data
+    to_origin, extents = trimesh.bounds.oriented_bounds(mesh)
+    bbox = np.stack([-extents/2, extents/2], axis=0).reshape(2,3)
+    os.makedirs(f'{opt.linemod_dir}/track_vis', exist_ok=True)
+
     outs = []
-    for arg in args:
-      out = run_pose_estimation_worker(*arg)
+    i = 0
+    for arg in args[:200]:
+      print("### num:", i)
+      out, pose = run_pose_estimation_worker(*arg)
       outs.append(out)
+      center_pose = pose@np.linalg.inv(to_origin)
+      img_color = reader.get_color(i)
+      vis = draw_posed_3d_box(reader.K, img=img_color, ob_in_cam=center_pose, bbox=bbox)
+      vis = draw_xyz_axis(img_color, ob_in_cam=center_pose, scale=0.1, K=reader.K, thickness=3, transparency=0, is_input_rgb=True)
+      imageio.imwrite(f'{opt.linemod_dir}/track_vis/{reader.id_strs[i]}.png', vis)
+      i = i + 1
 
     for out in outs:
       for video_id in out:
@@ -131,19 +144,17 @@ def run_pose_estimation():
 
   with open(f'{opt.debug_dir}/linemod_res.yml','w') as ff:
     yaml.safe_dump(make_yaml_dumpable(res), ff)
+    print("Save linemod_res.yml OK !!!")
 
 
 if __name__=='__main__':
   parser = argparse.ArgumentParser()
   code_dir = os.path.dirname(os.path.realpath(__file__))
-  parser.add_argument('--linemod_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/LINEMOD", help="linemod root dir")
-  parser.add_argument('--use_reconstructed_mesh', type=int, default=0)
-  parser.add_argument('--ref_view_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16")
+  parser.add_argument('--linemod_dir', type=str, default="/home/zfb/FoundationPose/train_data/lm_test_all/000005", help="linemod root dir") # lm_test_all  lm_test
   parser.add_argument('--debug', type=int, default=0)
-  parser.add_argument('--debug_dir', type=str, default=f'{code_dir}/debug')
+  parser.add_argument('--debug_dir', type=str, default=f'/home/zfb/FoundationPose/train_data/lm_test_all/000005/debug') # lm_test_all  lm_test
   opt = parser.parse_args()
   set_seed(0)
 
   detect_type = 'mask'   # mask / box / detected
-
   run_pose_estimation()

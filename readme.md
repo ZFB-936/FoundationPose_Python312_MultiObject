@@ -1,254 +1,107 @@
-# FoundationPose: Unified 6D Pose Estimation and Tracking of Novel Objects
-[[Paper]](https://arxiv.org/abs/2312.08344) [[Website]](https://nvlabs.github.io/FoundationPose/)
+# FoundationPose：基于 CAD 模型的 6D 位姿估计与跟踪
 
-This is the official implementation of our paper to be appeared in CVPR 2024 (Highlight)
+本仓库保留已知物体 CAD 模型的位姿估计与跟踪流程。输入为物体网格、RGB-D 图像、相机内参和首帧物体掩码；首帧估计位姿，后续帧进行跟踪。
 
-Contributors: Bowen Wen, Wei Yang, Jan Kautz, Stan Birchfield
+原项目：[FoundationPose](https://github.com/NVlabs/FoundationPose) · [论文](https://arxiv.org/abs/2312.08344)
 
-We present FoundationPose, a unified foundation model for 6D object pose estimation and tracking, supporting both model-based and model-free setups. Our approach can be instantly applied at test-time to a novel object without fine-tuning, as long as its CAD model is given, or a small number of reference images are captured. We bridge the gap between these two setups with a neural implicit representation that allows for effective novel view synthesis, keeping the downstream pose estimation modules invariant under the same unified framework. Strong generalizability is achieved via large-scale synthetic training, aided by a large language model (LLM), a novel transformer-based architecture, and contrastive learning formulation. Extensive evaluation on multiple public datasets involving challenging scenarios and objects indicate our unified approach outperforms existing methods specialized for each task by a large margin. In addition, it even achieves comparable results to instance-level methods despite the reduced assumptions.
+## 代码结构
 
-
-<img src="assets/intro.jpg" width="70%">
-
-**🤖 For ROS version, please check [Isaac ROS Pose Estimation](https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_pose_estimation), which enjoys TRT fast inference and C++ speed up.**
-
-\
-**🥇 No. 1 on the world-wide [BOP leaderboard](https://bop.felk.cvut.cz/leaderboards/pose-estimation-unseen-bop23/core-datasets/) (as of 2024/03) for model-based novel object pose estimation.**
-<img src="assets/bop.jpg" width="80%">
-
-## Demos
-
-Robotic Applications:
-
-https://github.com/NVlabs/FoundationPose/assets/23078192/aa341004-5a15-4293-b3da-000471fd74ed
-
-
-AR Applications:
-
-https://github.com/NVlabs/FoundationPose/assets/23078192/80e96855-a73c-4bee-bcef-7cba92df55ca
-
-
-Results on YCB-Video dataset:
-
-https://github.com/NVlabs/FoundationPose/assets/23078192/9b5bedde-755b-44ed-a973-45ec85a10bbe
-
-
-
-# Bibtex
-```bibtex
-@InProceedings{foundationposewen2024,
-author        = {Bowen Wen, Wei Yang, Jan Kautz, Stan Birchfield},
-title         = {{FoundationPose}: Unified 6D Pose Estimation and Tracking of Novel Objects},
-booktitle     = {CVPR},
-year          = {2024},
-}
+```text
+run_demo.py                         # 单物体估计与视频跟踪
+run_linemod.py                      # LINEMOD 数据集入口
+run_ycb_video.py                    # YCB-Video 数据集入口
+estimater.py                       # 候选位姿生成、精修、评分与跟踪
+Utils.py                           # CAD 渲染、深度处理、几何和可视化
+datareader.py                     # RGB-D、掩码、内参与 CAD 模型读取
+learning/
+  rotation.py                      # 纯 PyTorch 旋转转换
+  models/                          # 精修网络、评分网络及共享模块
+  inference/predict_pose_refine.py   # 精修推理
+  inference/predict_score.py         # 评分推理
+  preprocessing.py                 # RGB-D 裁剪后的输入预处理
+  pose_data.py                     # 批量位姿数据结构
+mycpp/                             # 候选位姿聚类扩展
+weights/                           # 预训练权重
 ```
 
-If you find the model-free setup useful, please also consider cite:
+两个预测器直接使用独立的输入预处理模块，不再依赖 HDF5 数据集类。权重配置使用 YAML。
 
-```bibtex
-@InProceedings{bundlesdfwen2023,
-author        = {Bowen Wen and Jonathan Tremblay and Valts Blukis and Stephen Tyree and Thomas M\"{u}ller and Alex Evans and Dieter Fox and Jan Kautz and Stan Birchfield},
-title         = {{BundleSDF}: {N}eural 6-{DoF} Tracking and {3D} Reconstruction of Unknown Objects},
-booktitle     = {CVPR},
-year          = {2023},
-}
-```
+## 环境安装
 
-# Data prepare
-
-
-1) Download all network weights from [here](https://drive.google.com/drive/folders/1DFezOAD0oD1BblsXVxqDsl8fj0qzB82i?usp=sharing) and put them under the folder `weights/`. For the refiner, you will need `2023-10-28-18-33-37`. For scorer, you will need `2024-01-11-20-02-45`.
-
-1) [Download demo data](https://drive.google.com/drive/folders/1pRyFmxYXmAnpku7nGRioZaKrVJtIsroP?usp=sharing) and extract them under the folder `demo_data/`
-
-1) [Optional] Download our large-scale training data: ["FoundationPose Dataset"](https://drive.google.com/drive/folders/1s4pB6p4ApfWMiMjmTXOFco8dHbNXikp-?usp=sharing)
-
-1) [Optional] Download our preprocessed reference views [here](https://drive.google.com/drive/folders/1PXXCOJqHXwQTbwPwPbGDN9_vLVe0XpFS?usp=sharing) in order to run model-free few-shot version.
-
-# Env setup option 1: docker (recommended)
-  ```
-  cd docker/
-  docker pull wenbowen123/foundationpose && docker tag wenbowen123/foundationpose foundationpose  # Or to build from scratch: docker build --network host -t foundationpose .
-  bash docker/run_container.sh
-  ```
-
-
-If it's the first time you launch the container, you need to build extensions. Run this command *inside* the Docker container.
-```
-bash build_all.sh
-```
-
-Later you can execute into the container without re-build.
-```
-docker exec -it foundationpose bash
-```
-
-For more recent GPU such as 4090, refer to [this](https://github.com/NVlabs/FoundationPose/issues/27).
-In short, do the following:
-```
-docker pull shingarey/foundationpose_custom_cuda121:latest
-```
-Then modify the bash script to use this image instead of `foundationpose:latest`.
-
-
-# Env setup option 2: conda (experimental)
-
-- Setup conda environment
+以下配置沿用本仓库的 Python 3.9、PyTorch 2.7.1 和 CUDA 12.8 版本。安装前准备可用的 NVIDIA 驱动和 CUDA 开发工具链。
 
 ```bash
-# create conda environment
-conda create -n foundationpose python=3.9
-
-# activate conda environment
+conda create -n foundationpose python=3.9 -y
 conda activate foundationpose
-
-# Install Eigen3 3.4.0 under conda environment
-conda install conda-forge::eigen=3.4.0
-export CMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH:/eigen/path/under/conda"
-
-# install dependencies
+conda install -c conda-forge eigen=3.4.0 cmake boost-cpp -y
 python -m pip install -r requirements.txt
 
-# Install NVDiffRast
-python -m pip install --quiet --no-cache-dir git+https://github.com/NVlabs/nvdiffrast.git
+# CAD 渲染器仍为必需依赖。
+python -m pip install --no-cache-dir --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git
 
-# Kaolin (Optional, needed if running model-free setup)
-python -m pip install --quiet --no-cache-dir kaolin==0.15.0 -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.0.0_cu118.html
-
-# PyTorch3D
-python -m pip install --quiet --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu118_pyt200/download.html
-
-# Build extensions
-CMAKE_PREFIX_PATH=$CONDA_PREFIX/lib/python3.9/site-packages/pybind11/share/cmake/pybind11 bash build_all_conda.sh
+# 仅编译候选位姿聚类扩展。
+bash build_all_conda.sh -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
 ```
 
-## Env setup for RTX 50 series GPU
-Due to the `sm_120` architecture, Pytorch binaries only support Cuda `12.8+` and PyTorch `2.7.0+` (see [here](https://discuss.pytorch.org/t/pytorch-support-for-sm120/216099)). Therefore, the provided Docker images (including the one for RTX 40 series) won't work. Until a Docker image is provided, it is still possible to set up FoundationPose using the Conda instructions on Python `3.9`. The main tricks are:
+旋转转换已改为纯 PyTorch 实现，无需额外的三维深度学习工具库。依赖清单只保留当前代码使用的包，不包含 Notebook、纹理展开、资产下载、检测器或实验管理工具。
 
-1. Make sure Cuda 12.8 is installed.
-1. PyTorch3D does not currently have a prebuilt binary for `sm_120`([GitHub issue](https://github.com/facebookresearch/pytorch3d/issues/1970)). Just [install it from source](https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md#building--installing-from-source) manually.
-1. There may be build failures in the "Build extensions" step. See the troubleshooting section.
+迁移仓库路径后，如果 CMake 报旧路径缓存错误，可先移走 `mycpp/build/`，再重新运行构建命令。
 
-### Troubleshooting
-- If the following occurs, there is a mismatch between PyTorch / Cuda /GPU version. Note that it is *possible* to install Cuda 12.0~12.7 on a RTX50 series card and then install some earlier Pytorch binaries, it will just throw the error below upon running. Install Cuda `12.8+` and PyTorch `2.7.0+` to fix this.
-```
-RuntimeError: CUDA error: no kernel image is available for execution on the device
-CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
-For debugging consider passing CUDA_LAUNCH_BLOCKING=1
-```
+## Docker
 
-- An error message like this indicates a problem with PyTorch. See [this issue](https://github.com/facebookresearch/pytorch3d/issues/1315). This can be fixed by installing from source.
-```
-".../python3.9/site-packages/pytorch3d/renderer/blending.py", line 12, in <module>
-    from pytorch3d import _C
-ImportError: .../python3.9/site-packages/pytorch3d/_C.cpython-39-x86_64-linux-gnu.so: undefined symbol: _ZN3c105ErrorC2ENS_14SourceLocationESs
+在仓库根目录构建，镜像使用同一份依赖清单：
+
+```bash
+docker build -f docker/dockerfile -t foundationpose .
+cd docker
+bash run_container.sh
 ```
 
-- As suggested by [this issue](https://github.com/NVlabs/FoundationPose/issues/288), the following error from running `python run_demo.py` suggests a build issue in `mycpp`. Run the commands in `build_all_conda.sh` manually and make sure `mycpp` is built correctly.
-```
-    rot_grid = mycpp.cluster_poses(30, 99999, rot_grid, self.symmetry_tfs.data.cpu().numpy())
-AttributeError: 'NoneType' object has no attribute 'cluster_poses'
-```
+首次进入容器后，在挂载的仓库中编译扩展：
 
-- This error from building `mycuda` occurs specifically on RTX50 series cards due to using deprecated API. The fix is to modify `bundlesdf/mycuda/common.cu` to use the new API. This is included in commit `25fe3b`.
-```
-.../FoundationPose/bundlesdf/mycuda/common.cu", static_cast<uint32_t>(268), (::c10::detail::torchCheckMsgImpl( "Expected " "false" " to be true, but got false.  " "(Could this error message be improved?  If so, " "please report an enhancement request to PyTorch.)", '"', at_dispatch_name, "\" not implemented for '", toString(_st), "'"))); }; } }()
+```bash
+bash build_all.sh -Dpybind11_DIR="$(python -m pybind11 --cmakedir)"
 ```
 
-# Run model-based demo
-The paths have been set in argparse by default. If you need to change the scene, you can pass the args accordingly. By running on the demo data, you should be able to see the robot manipulating the mustard bottle. Pose estimation is conducted on the first frame, then it automatically switches to tracking mode for the rest of the video. The resulting visualizations will be saved to the `debug_dir` specified in the argparse. (Note the first time running could be slower due to online compilation)
-```
-python run_demo.py
-```
+## 数据和权重
 
+下载[预训练权重](https://drive.google.com/drive/folders/1DFezOAD0oD1BblsXVxqDsl8fj0qzB82i?usp=sharing)，目录如下：
 
-<img src="assets/demo.jpg" width="50%">
-
-
-Feel free to try on other objects (**no need to retrain**) such as driller, by changing the paths in argparse.
-
-<img src="assets/demo_driller.jpg" width="50%">
-
-
-# Run on public datasets (LINEMOD, YCB-Video)
-
-For this you first need to download LINEMOD dataset and YCB-Video dataset.
-
-To run model-based version on these two datasets respectively, set the paths based on where you download. The results will be saved to `debug` folder
-```
-python run_linemod.py --linemod_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/LINEMOD --use_reconstructed_mesh 0
-
-python run_ycb_video.py --ycbv_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video --use_reconstructed_mesh 0
+```text
+weights/2023-10-28-18-33-37/{config.yml,model_best.pth}  # 精修
+weights/2024-01-11-20-02-45/{config.yml,model_best.pth}  # 评分
 ```
 
-To run model-free few-shot version. You first need to train Neural Object Field. `ref_view_dir` is based on where you download in the above "Data prepare" section. Set the `dataset` flag to your interested dataset.
+[演示数据](https://drive.google.com/drive/folders/1pRyFmxYXmAnpku7nGRioZaKrVJtIsroP?usp=sharing)解压到 `demo_data/`，也可以通过命令行指定自己的 CAD 网格和 RGB-D 序列。网格和深度均使用米作为单位。
+
+## 运行
+
+```bash
+python run_demo.py --mesh_file /path/to/model.obj --test_scene_dir /path/to/rgbd_sequence
+python run_linemod.py --linemod_dir /path/to/linemod/000005
+python run_ycb_video.py --ycbv_dir /path/to/YCB_Video
 ```
-python bundlesdf/run_nerf.py --ref_view_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16 --dataset ycbv
+
+`run_demo.py` 保留本地自定义数据集的默认路径。运行时按需指定 `--debug_dir`；位姿输出在该目录的 `ob_in_cam/` 中。
+
+## 检查
+
+```bash
+python -m unittest discover -s tests -v
+python run_demo.py --help
+python run_linemod.py --help
+python run_ycb_video.py --help
 ```
 
-Then run the similar command as the model-based version with some small modifications. Here we are using YCB-Video as example:
+## 引用与许可
+
+```bibtex
+@InProceedings{foundationposewen2024,
+  author = {Bowen Wen, Wei Yang, Jan Kautz, Stan Birchfield},
+  title = {{FoundationPose}: Unified 6D Pose Estimation and Tracking of Novel Objects},
+  booktitle = {CVPR},
+  year = {2024}
+}
 ```
-python run_ycb_video.py --ycbv_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video --use_reconstructed_mesh 1 --ref_view_dir /mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16
-```
 
-# Troubleshooting
-
-
-- For more recent GPU such as 4090, refer to [this](https://github.com/NVlabs/FoundationPose/issues/27).
-
-- For setting up on Windows, refer to [this](https://github.com/NVlabs/FoundationPose/issues/148).
-
-- If you are getting unreasonable results, check [this](https://github.com/NVlabs/FoundationPose/issues/44#issuecomment-2048141043) and [this](https://github.com/030422Lee/FoundationPose_manual)
-
-# Training data download
-Our training data include scenes using 3D assets from GSO and Objaverse, rendered with high quality photo-realism and large domain randomization. Each data point includes **RGB, depth, object pose, camera pose, instance segmentation, 2D bounding box**. [[Google Drive]](https://drive.google.com/drive/folders/1s4pB6p4ApfWMiMjmTXOFco8dHbNXikp-?usp=sharing).
-
-<img src="assets/train_data_vis.png" width="80%">
-
-- To parse the camera params including extrinsics and intrinsics
-  ```
-  glcam_in_cvcam = np.array([[1,0,0,0],
-                          [0,-1,0,0],
-                          [0,0,-1,0],
-                          [0,0,0,1]]).astype(float)
-  W, H = camera_params["renderProductResolution"]
-  with open(f'{base_dir}/camera_params/camera_params_000000.json','r') as ff:
-    camera_params = json.load(ff)
-  world_in_glcam = np.array(camera_params['cameraViewTransform']).reshape(4,4).T
-  cam_in_world = np.linalg.inv(world_in_glcam)@glcam_in_cvcam
-  world_in_cam = np.linalg.inv(cam_in_world)
-  focal_length = camera_params["cameraFocalLength"]
-  horiz_aperture = camera_params["cameraAperture"][0]
-  vert_aperture = H / W * horiz_aperture
-  focal_y = H * focal_length / vert_aperture
-  focal_x = W * focal_length / horiz_aperture
-  center_y = H * 0.5
-  center_x = W * 0.5
-
-  fx, fy, cx, cy = focal_x, focal_y, center_x, center_y
-  K = np.eye(3)
-  K[0,0] = fx
-  K[1,1] = fy
-  K[0,2] = cx
-  K[1,2] = cy
-  ```
-
-
-
-# Notes
-Due to the legal restrictions of Stable-Diffusion that is trained on LAION dataset, we are not able to release the diffusion-based texture augmented data, nor the pretrained weights using it. We thus release the version without training on diffusion-augmented data. Slight performance degradation is expected.
-
-# Acknowledgement
-
-We would like to thank Jeff Smith for helping with the code release; NVIDIA Isaac Sim and Omniverse team for the support on synthetic data generation; Tianshi Cao for the valuable discussions. Finally, we are also grateful for the positive feebacks and constructive suggestions brought up by reviewers and AC at CVPR.
-
-<img src="assets/cvpr_review.png" width="100%">
-
-
-# License
-The code and data are released under the NVIDIA Source Code License. Copyright © 2024, NVIDIA Corporation. All rights reserved.
-
-
-# Contact
-For questions, please contact [Bowen Wen](https://wenbowen123.github.io/).
+代码及数据遵循 [NVIDIA Source Code License](LICENSE)。原作者及版权声明保留在源文件中。

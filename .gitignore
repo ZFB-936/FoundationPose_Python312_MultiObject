@@ -10,7 +10,6 @@ BundleTrack/build
 # Distribution / packaging
 .Python
 foundationpose/
-pytorch3d/
 build/
 develop-eggs/
 *.zip
@@ -21,6 +20,7 @@ dist/
 debug/
 weights/*
 downloads/
+train_data/
 eggs/
 .eggs/
 lib/

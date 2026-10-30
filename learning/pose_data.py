@@ -7,60 +7,9 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 
-import os,sys
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Set, Union
-import numpy as np
+from typing import Optional
 import torch
-code_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(f'{code_dir}/../../../../')
-from Utils import *
-
-
-@dataclass
-class PoseData:
-    """
-    rgb: (h, w, 3) uint8
-    depth: (bsz, h, w) float32
-    bbox: (4, ) int
-    K: (3, 3) float32
-    """
-    rgb: np.ndarray = None
-    bbox: np.ndarray = None
-    K: np.ndarray = None
-    depth: Optional[np.ndarray] = None
-    object_data = None
-    mesh_diameter: float = None
-    rgbA: np.ndarray = None
-    rgbB: np.ndarray = None
-    depthA: np.ndarray = None
-    depthB: np.ndarray = None
-    maskA = None
-    maskB = None
-    poseA: np.ndarray = None   #(4,4)
-    target: float = None
-
-    def __init__(self, rgbA=None, rgbB=None, depthA=None, depthB=None, maskA=None, maskB=None, normalA=None, normalB=None, xyz_mapA=None, xyz_mapB=None, poseA=None, poseB=None, K=None, target=None, mesh_diameter=None, tf_to_crop=None, crop_mask=None, model_pts=None, label=None, model_scale=None):
-      self.rgbA = rgbA      #(H,W,3) or (H,W*n_view,3) when multiview
-      self.rgbB = rgbB
-      self.depthA = depthA
-      self.depthB = depthB
-      self.poseA = poseA
-      self.poseB = poseB
-      self.maskA = maskA
-      self.maskB = maskB
-      self.crop_mask = crop_mask
-      self.normalA = normalA
-      self.normalB = normalB
-      self.xyz_mapA = xyz_mapA
-      self.xyz_mapB = xyz_mapB
-      self.target = target
-      self.K = K
-      self.mesh_diameter = mesh_diameter
-      self.tf_to_crop = tf_to_crop
-      self.model_pts = model_pts
-      self.label = label
-      self.model_scale = model_scale
 
 
 @dataclass
@@ -132,4 +81,3 @@ class BatchPoseData:
         if self.__dict__[k] is not None:
           out.__dict__[k] = self.__dict__[k][ids.to(self.__dict__[k].device)]
       return out
-

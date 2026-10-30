@@ -7,21 +7,15 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 
-import functools
 import os,sys,kornia
-import time
 import numpy as np
 import torch
-import torch.distributed as dist
 from omegaconf import OmegaConf
-from tqdm import tqdm
 code_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(f'{code_dir}/../../../')
-from learning.datasets.h5_dataset import *
-from learning.models.score_network import *
-from learning.datasets.pose_dataset import *
+from learning.preprocessing import PoseScorePreprocessor
+from learning.pose_data import BatchPoseData
+from learning.models.score_network import ScoreNetMultiPair
 from Utils import *
-from datareader import *
 
 
 def vis_batch_data_scores(pose_data, ids, scores, pad_margin=5):
@@ -52,9 +46,8 @@ def vis_batch_data_scores(pose_data, ids, scores, pad_margin=5):
   return canvas
 
 
-
 @torch.no_grad()
-def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_ratio, normal_map=None, mesh_diameter=None, glctx=None, mesh_tensors=None, dataset:TripletH5Dataset=None, cfg=None):
+def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_ratio, normal_map=None, mesh_diameter=None, glctx=None, mesh_tensors=None, preprocessor:PoseScorePreprocessor=None, cfg=None):
   logging.info("Welcome make_crop_data_batch")
   H,W = depth.shape[:2]
 
@@ -107,7 +100,7 @@ def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_rati
   mesh_diameters = torch.ones((len(rgbAs)), dtype=torch.float, device='cuda')*mesh_diameter
 
   pose_data = BatchPoseData(rgbAs=rgbAs, rgbBs=rgbBs, depthAs=depthAs, depthBs=depthBs, normalAs=normalAs, normalBs=normalBs, poseA=poseAs, xyz_mapAs=xyz_mapAs, tf_to_crops=tf_to_crops, Ks=Ks, mesh_diameters=mesh_diameters)
-  pose_data = dataset.transform_batch(pose_data, H_ori=H, W_ori=W, bound=1)
+  pose_data = preprocessor.transform_batch(pose_data, H_ori=H, W_ori=W, bound=1)
 
   logging.info("pose batch data done")
 
@@ -144,7 +137,7 @@ class ScorePredictor:
 
     logging.info(f"self.cfg: \n {OmegaConf.to_yaml(self.cfg)}")
 
-    self.dataset = ScoreMultiPairH5Dataset(cfg=self.cfg, mode='test', h5_file=None, max_num_key=1)
+    self.preprocessor = PoseScorePreprocessor(cfg=self.cfg)
     self.model = ScoreNetMultiPair(cfg=self.cfg, c_in=self.cfg['c_in']).cuda()
 
     logging.info(f"Using pretrained model from {ckpt_dir}")
@@ -177,7 +170,7 @@ class ScorePredictor:
     rgb = torch.as_tensor(rgb, device='cuda', dtype=torch.float)
     depth = torch.as_tensor(depth, device='cuda', dtype=torch.float)
 
-    pose_data = make_crop_data_batch(self.cfg.input_resize, ob_in_cams, mesh, rgb, depth, K, crop_ratio=self.cfg['crop_ratio'], glctx=glctx, mesh_tensors=mesh_tensors, dataset=self.dataset, cfg=self.cfg, mesh_diameter=mesh_diameter)
+    pose_data = make_crop_data_batch(self.cfg.input_resize, ob_in_cams, mesh, rgb, depth, K, crop_ratio=self.cfg['crop_ratio'], glctx=glctx, mesh_tensors=mesh_tensors, preprocessor=self.preprocessor, cfg=self.cfg, mesh_diameter=mesh_diameter)
 
     def find_best_among_pairs(pose_data:BatchPoseData):
       logging.info(f'pose_data.rgbAs.shape[0]: {pose_data.rgbAs.shape[0]}')
@@ -224,4 +217,3 @@ class ScorePredictor:
       return scores, canvas
 
     return scores, None
-

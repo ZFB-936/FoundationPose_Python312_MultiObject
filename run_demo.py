@@ -7,16 +7,19 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 
-from estimater import *
-from datareader import *
+from Utils import *
+from estimater import FoundationPose
+from datareader import YcbineoatReader
+from learning.inference.predict_score import ScorePredictor
+from learning.inference.predict_pose_refine import PoseRefinePredictor
 import argparse
 
 
 if __name__=='__main__':
   parser = argparse.ArgumentParser()
   code_dir = os.path.dirname(os.path.realpath(__file__))
-  parser.add_argument('--mesh_file', type=str, default=f'{code_dir}/demo_data/mustard0/mesh/textured_simple.obj')
-  parser.add_argument('--test_scene_dir', type=str, default=f'{code_dir}/demo_data/mustard0')
+  parser.add_argument('--mesh_file', type=str, default=f'{code_dir}/demo_data/custom_dataset/cup/mesh/untitled.obj')
+  parser.add_argument('--test_scene_dir', type=str, default=f'{code_dir}/demo_data/custom_dataset/cup')
   parser.add_argument('--est_refine_iter', type=int, default=5)
   parser.add_argument('--track_refine_iter', type=int, default=2)
   parser.add_argument('--debug', type=int, default=1)

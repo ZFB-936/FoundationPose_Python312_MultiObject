@@ -53,7 +53,6 @@ def get_bop_video_dirs(dataset):
   return video_dirs
 
 
-
 class YcbineoatReader:
   def __init__(self,video_dir, downscale=1, shorter_side=None, zfar=np.inf):
     self.video_dir = video_dir
@@ -122,7 +121,7 @@ class YcbineoatReader:
   def get_depth(self,i):
     depth = cv2.imread(self.color_files[i].replace('rgb','depth'),-1)/1e3
     depth = cv2.resize(depth, (self.W,self.H), interpolation=cv2.INTER_NEAREST)
-    depth[(depth<0.001) | (depth>=self.zfar)] = 0
+    depth[(depth<0.1) | (depth>=self.zfar)] = 0
     return depth
 
 
@@ -172,7 +171,7 @@ class BopBaseReader:
     if os.path.exists(f'{self.base_dir}/scene_gt.json'):
       with open(f'{self.base_dir}/scene_gt.json','r') as ff:
         self.scene_gt = json.load(ff)
-      self.scene_gt = copy.deepcopy(self.scene_gt)   # Release file handle to be pickle-able by joblib
+      self.scene_gt = copy.deepcopy(self.scene_gt)   # Keep a standalone copy of the parsed annotations
       assert len(self.scene_gt)==len(self.color_files)
     else:
       self.scene_gt = None
@@ -253,7 +252,7 @@ class BopBaseReader:
       depth = cv2.imread(depth_file,-1)*1e-3*self.bop_depth_scale
     if self.resize!=1:
       depth = cv2.resize(depth, fx=self.resize, fy=self.resize, dsize=None, interpolation=cv2.INTER_NEAREST)
-    depth[depth<0.001] = 0
+    depth[depth<0.1] = 0
     depth[depth>self.zfar] = 0
     return depth
 
@@ -301,7 +300,6 @@ class BopBaseReader:
     with open(info_file,'r') as ff:
       info = json.load(ff)
     return info[str(ob_id)]['diameter']/1e3
-
 
 
   def get_gt_poses(self, i_frame, ob_id):
@@ -389,12 +387,11 @@ class LinemodOcclusionReader(BopBaseReader):
       14: 'lamp',
       15: 'phone',
     }
-    self.load_symmetry_tfs()
+    # self.load_symmetry_tfs()
 
   def get_gt_mesh_file(self, ob_id):
     mesh_dir = f'{BOP_DIR}/{self.dataset_name}/models/obj_{ob_id:06d}.ply'
     return mesh_dir
-
 
 
 class LinemodReader(LinemodOcclusionReader):
@@ -402,6 +399,7 @@ class LinemodReader(LinemodOcclusionReader):
     super().__init__(base_dir, zfar=zfar)
     self.dataset_name = 'lm'
     if split is not None:  # train/test
+      print("## split is not None")
       with open(f'/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/LINEMOD/Linemod_preprocessed/data/{self.get_video_id():02d}/{split}.txt','r') as ff:
         lines = ff.read().splitlines()
       self.color_files = []
@@ -411,23 +409,23 @@ class LinemodReader(LinemodOcclusionReader):
       self.make_id_strs()
 
     self.ob_ids = np.setdiff1d(np.arange(1,16), np.array([7,3])).tolist()  # Exclude bowl and mug
-    self.load_symmetry_tfs()
+    # self.load_symmetry_tfs()
 
 
   def get_gt_mesh_file(self, ob_id):
     root = self.base_dir
+    print(f'{root}/../')
+    print(f'{root}/lm_models')
+    print(f'{root}/lm_models/models/obj_{ob_id:06d}.ply')
     while 1:
       if os.path.exists(f'{root}/lm_models'):
         mesh_dir = f'{root}/lm_models/models/obj_{ob_id:06d}.ply'
         break
       else:
         root = os.path.abspath(f'{root}/../')
+        mesh_dir = f'{root}/lm_models/models/obj_{ob_id:06d}.ply'
+        break
     return mesh_dir
-
-
-  def get_reconstructed_mesh(self, ob_id, ref_view_dir):
-    mesh = trimesh.load(os.path.abspath(f'{ref_view_dir}/ob_{ob_id:07d}/model/model.obj'))
-    return mesh
 
 
 class YcbVideoReader(BopBaseReader):
@@ -440,19 +438,24 @@ class YcbVideoReader(BopBaseReader):
 
     self.ob_ids = np.arange(1,22).astype(int).tolist()
     YCB_VIDEO_DIR = os.getenv('YCB_VIDEO_DIR')
-    names = sorted(os.listdir(f'{YCB_VIDEO_DIR}/models/'))
     self.ob_id_to_names = {}
     self.name_to_ob_id = {}
-    for i,ob_id in enumerate(self.ob_ids):
-      self.ob_id_to_names[ob_id] = names[i]
-      self.name_to_ob_id[names[i]] = ob_id
+    # names = sorted(os.listdir(f'{YCB_VIDEO_DIR}/models/'))
+    if os.path.exists(f'{YCB_VIDEO_DIR}/models/'):
+        names = sorted(os.listdir(f'{YCB_VIDEO_DIR}/models/'))
+        for i,ob_id in enumerate(self.ob_ids):
+          self.ob_id_to_names[ob_id] = names[i]
+          self.name_to_ob_id[names[i]] = ob_id
+    else:
+        names = []
 
-    if 'BOP' not in self.base_dir:
+    if 0:
+    # if 'BOP' not in self.base_dir:
       with open(f'{self.base_dir}/../../keyframe.txt','r') as ff:
         self.keyframe_lines = ff.read().splitlines()
 
-    self.load_symmetry_tfs()
-    for ob_id in self.ob_ids:
+    # self.load_symmetry_tfs()
+    '''for ob_id in self.ob_ids:
       if ob_id in [1,4,6,18]:   # Cylinder
         self.geometry_symmetry_info_table[ob_id] = {
           'symmetries_continuous': [
@@ -476,7 +479,7 @@ class YcbVideoReader(BopBaseReader):
           'symmetries_discrete': np.asarray(tfs).reshape(-1,4,4).tolist(),
           }
       else:
-        pass
+        pass'''
 
   def get_gt_mesh_file(self, ob_id):
     if 'BOP' in self.base_dir:
@@ -505,16 +508,6 @@ class YcbVideoReader(BopBaseReader):
     return mesh
 
 
-  def get_reconstructed_mesh(self, ob_id, ref_view_dir):
-    mesh = trimesh.load(os.path.abspath(f'{ref_view_dir}/ob_{ob_id:07d}/model/model.obj'))
-    return mesh
-
-
-  def get_transform_reconstructed_to_gt_model(self, ob_id):
-    out = np.eye(4)
-    return out
-
-
   def get_visible_cloud(self, ob_id):
     file = os.path.abspath(f'{self.base_dir}/../../models/{self.ob_id_to_names[ob_id]}/visible_cloud.ply')
     pcd = o3d.io.read_point_cloud(file)
@@ -527,7 +520,6 @@ class YcbVideoReader(BopBaseReader):
     frame_id = int(os.path.basename(color_file).split('.')[0])
     key = f'{video_id:04d}/{frame_id:06d}'
     return (key in self.keyframe_lines)
-
 
 
 class TlessReader(BopBaseReader):
@@ -570,7 +562,6 @@ class HomebrewedReader(BopBaseReader):
     return np.eye(4)
 
 
-
 class ItoddReader(BopBaseReader):
   def __init__(self, base_dir, zfar=np.inf):
     super().__init__(base_dir, zfar=zfar)
@@ -609,5 +600,3 @@ class TudlReader(BopBaseReader):
   def get_gt_mesh_file(self, ob_id):
     mesh_file = f'{self.base_dir}/../../../tudl_models/models/obj_{ob_id:06d}.ply'
     return mesh_file
-
-

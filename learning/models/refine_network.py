@@ -7,20 +7,9 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 
-import os,sys
-import numpy as np
-code_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(code_dir)
-sys.path.append(f'{code_dir}/../../../../')
-from Utils import *
-import torch.nn.functional as F
 import torch
 import torch.nn as nn
-import cv2
-from functools import partial
-from network_modules import *
-from Utils import *
-
+from learning.models.network_modules import ConvBNReLU, PositionalEmbedding, ResnetBasicBlock
 
 
 class RefineNet(nn.Module):

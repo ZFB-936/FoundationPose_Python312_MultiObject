@@ -8,10 +8,8 @@
 
 
 from Utils import *
-from datareader import *
-import itertools
-from learning.training.predict_score import *
-from learning.training.predict_pose_refine import *
+from learning.inference.predict_score import ScorePredictor
+from learning.inference.predict_pose_refine import PoseRefinePredictor
 import yaml
 
 
@@ -63,11 +61,7 @@ class FoundationPose:
     self.pts = torch.tensor(np.asarray(pcd.points), dtype=torch.float32, device='cuda')
     self.normals = F.normalize(torch.tensor(np.asarray(pcd.normals), dtype=torch.float32, device='cuda'), dim=-1)
     logging.info(f'self.pts:{self.pts.shape}')
-    self.mesh_path = None
     self.mesh = mesh
-    if self.mesh is not None:
-      self.mesh_path = f'/tmp/{uuid.uuid4()}.obj'
-      self.mesh.export(self.mesh_path)
     self.mesh_tensors = make_mesh_tensors(self.mesh)
 
     if symmetry_tfs is None:

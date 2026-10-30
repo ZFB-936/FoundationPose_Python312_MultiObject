@@ -8,9 +8,9 @@
 
 
 from Utils import *
-import json,uuid,joblib,os,sys,argparse
-from datareader import *
-from estimater import *
+import os, sys, argparse
+from datareader import YcbVideoReader
+from estimater import FoundationPose
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/mycpp/build')
 import yaml
@@ -85,7 +85,6 @@ def run_pose_estimation():
   res = NestDict()
 
   debug = opt.debug
-  use_reconstructed_mesh = opt.use_reconstructed_mesh
   debug_dir = opt.debug_dir
 
   reader_tmp = YcbVideoReader(video_dirs[0])
@@ -96,10 +95,7 @@ def run_pose_estimation():
   ob_ids = reader_tmp.ob_ids
 
   for ob_id in ob_ids:
-    if use_reconstructed_mesh:
-      mesh = reader_tmp.get_reconstructed_mesh(ob_id, ref_view_dir=opt.ref_view_dir)
-    else:
-      mesh = reader_tmp.get_gt_mesh(ob_id)
+    mesh = reader_tmp.get_gt_mesh(ob_id)
     symmetry_tfs = reader_tmp.symmetry_tfs[ob_id]
 
     args = []
@@ -135,8 +131,6 @@ if __name__=='__main__':
   parser = argparse.ArgumentParser()
   code_dir = os.path.dirname(os.path.realpath(__file__))
   parser.add_argument('--ycbv_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video", help="data dir")
-  parser.add_argument('--use_reconstructed_mesh', type=int, default=0)
-  parser.add_argument('--ref_view_dir', type=str, default="/mnt/9a72c439-d0a7-45e8-8d20-d7a235d02763/DATASET/YCB_Video/bowen_addon/ref_views_16")
   parser.add_argument('--debug', type=int, default=0)
   parser.add_argument('--debug_dir', type=str, default=f'{code_dir}/debug')
   opt = parser.parse_args()

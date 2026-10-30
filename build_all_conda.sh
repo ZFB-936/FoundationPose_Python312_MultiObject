@@ -1,14 +1,9 @@
-PROJ_ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Install mycpp
-cd ${PROJ_ROOT}/mycpp/ && \
-rm -rf build && mkdir -p build && cd build && \
-cmake .. && \
-make -j$(nproc)
+PROJ_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
-# Install mycuda
-cd ${PROJ_ROOT}/bundlesdf/mycuda && \
-rm -rf build *egg* *.so && \
-python setup.py install
-
-cd ${PROJ_ROOT}
+# Only the pose-clustering extension is needed for model-based estimation.
+cmake -S "${PROJ_ROOT}/mycpp" -B "${PROJ_ROOT}/mycpp/build" \
+  -DPYTHON_EXECUTABLE="$(command -v python)" "$@"
+cmake --build "${PROJ_ROOT}/mycpp/build" --parallel "$(nproc)"

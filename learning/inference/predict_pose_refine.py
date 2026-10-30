@@ -7,23 +7,20 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 
-import functools
 import os,sys,kornia
-import time
 code_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(f'{code_dir}/../../')
 import numpy as np
 import torch
 from omegaconf import OmegaConf
 from learning.models.refine_network import RefineNet
-from learning.datasets.h5_dataset import *
+from learning.preprocessing import PoseRefinePreprocessor
+from learning.pose_data import BatchPoseData
 from Utils import *
-from datareader import *
-
+from learning.rotation import axis_angle_to_matrix, rotation_6d_to_matrix
 
 
 @torch.inference_mode()
-def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_ratio, xyz_map, normal_map=None, mesh_diameter=None, cfg=None, glctx=None, mesh_tensors=None, dataset:PoseRefinePairH5Dataset=None):
+def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_ratio, xyz_map, normal_map=None, mesh_diameter=None, cfg=None, glctx=None, mesh_tensors=None, preprocessor:PoseRefinePreprocessor=None):
   logging.info("Welcome make_crop_data_batch")
   H,W = depth.shape[:2]
   args = []
@@ -82,12 +79,11 @@ def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_rati
 
   mesh_diameters = torch.ones((len(rgbAs)), dtype=torch.float, device='cuda')*mesh_diameter
   pose_data = BatchPoseData(rgbAs=rgbAs, rgbBs=rgbBs, depthAs=None, depthBs=None, normalAs=normalAs, normalBs=normalBs, poseA=poseA, poseB=None, xyz_mapAs=xyz_mapAs, xyz_mapBs=xyz_mapBs, tf_to_crops=tf_to_crops, Ks=Ks, mesh_diameters=mesh_diameters)
-  pose_data = dataset.transform_batch(batch=pose_data, H_ori=H, W_ori=W, bound=1)
+  pose_data = preprocessor.transform_batch(batch=pose_data, H_ori=H, W_ori=W, bound=1)
 
   logging.info("pose batch data done")
 
   return pose_data
-
 
 
 class PoseRefinePredictor:
@@ -131,7 +127,7 @@ class PoseRefinePredictor:
       self.cfg['normal_uint8'] = False
     logging.info(f"self.cfg: \n {OmegaConf.to_yaml(self.cfg)}")
 
-    self.dataset = PoseRefinePairH5Dataset(cfg=self.cfg, h5_file='', mode='test')
+    self.preprocessor = PoseRefinePreprocessor(cfg=self.cfg)
     self.model = RefineNet(cfg=self.cfg, c_in=self.cfg['c_in']).cuda()
 
     logging.info(f"Using pretrained model from {ckpt_dir}")
@@ -181,7 +177,7 @@ class PoseRefinePredictor:
 
     for _ in range(iteration):
       logging.info("making cropped data")
-      pose_data = make_crop_data_batch(self.cfg.input_resize, B_in_cams, mesh_centered, rgb_tensor, depth_tensor, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, dataset=self.dataset, mesh_diameter=mesh_diameter)
+      pose_data = make_crop_data_batch(self.cfg.input_resize, B_in_cams, mesh_centered, rgb_tensor, depth_tensor, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, preprocessor=self.preprocessor, mesh_diameter=mesh_diameter)
       B_in_cams = []
       for b in range(0, pose_data.rgbAs.shape[0], bs):
         A = torch.cat([pose_data.rgbAs[b:b+bs].cuda(), pose_data.xyz_mapAs[b:b+bs].cuda()], dim=1).float()
@@ -219,7 +215,7 @@ class PoseRefinePredictor:
 
         if self.cfg['rot_rep']=='axis_angle':
           rot_mat_delta = torch.tanh(output["rot"])*self.cfg['rot_normalizer']
-          rot_mat_delta = so3_exp_map(rot_mat_delta).permute(0,2,1)
+          rot_mat_delta = axis_angle_to_matrix(rot_mat_delta).permute(0,2,1)
         elif self.cfg['rot_rep']=='6d':
           rot_mat_delta = rotation_6d_to_matrix(output['rot']).permute(0,2,1)
         else:
@@ -242,7 +238,7 @@ class PoseRefinePredictor:
       logging.info("get_vis...")
       canvas = []
       padding = 2
-      pose_data = make_crop_data_batch(self.cfg.input_resize, torch.as_tensor(ob_centered_in_cams), mesh_centered, rgb, depth, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, dataset=self.dataset, mesh_diameter=mesh_diameter)
+      pose_data = make_crop_data_batch(self.cfg.input_resize, torch.as_tensor(ob_centered_in_cams), mesh_centered, rgb, depth, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, preprocessor=self.preprocessor, mesh_diameter=mesh_diameter)
       for id in range(0, len(B_in_cams)):
         rgbA_vis = (pose_data.rgbAs[id]*255).permute(1,2,0).data.cpu().numpy()
         rgbB_vis = (pose_data.rgbBs[id]*255).permute(1,2,0).data.cpu().numpy()
@@ -266,7 +262,7 @@ class PoseRefinePredictor:
         canvas.append(row)
       canvas = make_grid_image(canvas, nrow=1, padding=padding, pad_value=255)
 
-      pose_data = make_crop_data_batch(self.cfg.input_resize, B_in_cams, mesh_centered, rgb, depth, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, dataset=self.dataset, mesh_diameter=mesh_diameter)
+      pose_data = make_crop_data_batch(self.cfg.input_resize, B_in_cams, mesh_centered, rgb, depth, K, crop_ratio=crop_ratio, normal_map=normal_map, xyz_map=xyz_map_tensor, cfg=self.cfg, glctx=glctx, mesh_tensors=mesh_tensors, preprocessor=self.preprocessor, mesh_diameter=mesh_diameter)
       canvas_refined = []
       for id in range(0, len(B_in_cams)):
         rgbA_vis = (pose_data.rgbAs[id]*255).permute(1,2,0).data.cpu().numpy()
@@ -293,4 +289,3 @@ class PoseRefinePredictor:
       return B_in_cams_out, canvas
 
     return B_in_cams_out, None
-

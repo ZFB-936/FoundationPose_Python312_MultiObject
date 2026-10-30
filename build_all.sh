@@ -1,7 +1,5 @@
-DIR=$(pwd)
+#!/usr/bin/env bash
+set -euo pipefail
 
-cd $DIR/mycpp/ && mkdir -p build && cd build && cmake .. -DPYTHON_EXECUTABLE=$(which python) && make -j11
-cd /kaolin && rm -rf build *egg* && pip install -e .
-cd $DIR/bundlesdf/mycuda && rm -rf build *egg* && pip install -e .
-
-cd ${DIR}
+PROJ_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+bash "${PROJ_ROOT}/build_all_conda.sh" "$@"

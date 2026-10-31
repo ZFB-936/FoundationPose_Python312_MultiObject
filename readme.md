@@ -1,36 +1,43 @@
-# FoundationPose：基于 CAD 模型的 6D 位姿估计与跟踪
+# FoundationPose Python 3.12 Multi-Object
 
-本仓库保留已知物体 CAD 模型的位姿估计与跟踪流程。输入为物体网格、RGB-D 图像、相机内参和首帧物体掩码；首帧估计位姿，后续帧进行跟踪。
+This fork keeps the CAD-based FoundationPose pipeline and adds an offline multi-object 6D pose evaluation path for HouseCat6D.
 
-原项目：[FoundationPose](https://github.com/NVlabs/FoundationPose) · [论文](https://arxiv.org/abs/2312.08344)
+The fork has two major changes:
 
-## 代码结构
+1. **A simplified Python 3.12 runtime.** The model-free BundleSDF path and its Kaolin/mycuda dependencies were removed. The repository uses PyTorch 2.11 with CUDA 12.8, pure-PyTorch rotation conversions, and a vendored nvdiffrast build. The original refinement and scoring network weights are unchanged.
+2. **HouseCat6D multi-object pose estimation.** The new `run_housecat6d.py` reads HouseCat6D's per-frame instance masks and stable instance IDs, runs an independent FoundationPose state for each CAD object, and reports pose and timing metrics. It does not require YOLO or an instance-ID tracker for this dataset evaluation.
+
+The upstream project is [NVlabs/FoundationPose](https://github.com/NVlabs/FoundationPose), presented at CVPR 2024. This fork is intended for known CAD models and RGB-D input; it does not solve object detection by itself.
+
+## Features
+
+- Python 3.12 and CUDA 12.8 environment.
+- Model-based RGB-D 6D pose initialization and tracking.
+- Vendored nvdiffrast source compiled by the local build script.
+- Per-frame shared depth filtering and XYZ computation for multi-object inference.
+- GPU-resident pose tensors through refinement and scoring.
+- Optional real-time visualization with OpenCV.
+- HouseCat6D evaluation with ADD, translation, rotation, and timing reports.
+
+## Repository Layout
 
 ```text
-run_demo.py                         # 单物体估计与视频跟踪
-run_linemod.py                      # LINEMOD 数据集入口
-run_ycb_video.py                    # YCB-Video 数据集入口
-estimater.py                       # 候选位姿生成、精修、评分与跟踪
-Utils.py                           # CAD 渲染、深度处理、几何和可视化
-datareader.py                     # RGB-D、掩码、内参与 CAD 模型读取
-learning/
-  rotation.py                      # 纯 PyTorch 旋转转换
-  models/                          # 精修网络、评分网络及共享模块
-  inference/predict_pose_refine.py   # 精修推理
-  inference/predict_score.py         # 评分推理
-  preprocessing.py                 # RGB-D 裁剪后的输入预处理
-  pose_data.py                     # 批量位姿数据结构
-mycpp/                             # 候选位姿聚类扩展
-third_party/nvdiffrast/             # 内置 GPU 渲染库源码、原许可证和版本说明
-build_all.sh                       # 统一编译并安装渲染库和聚类扩展
-weights/                           # 预训练权重
+run_demo.py                    Single-object demo and timing benchmark
+run_housecat6d.py              HouseCat6D multi-object evaluation
+housecat6d.py                  HouseCat6D reader and pose metrics
+estimater.py                   Candidate generation, refinement, scoring, tracking
+Utils.py                       CAD rendering, depth processing, geometry
+learning/models/               Refinement and scoring networks
+learning/inference/            Refinement and scoring inference
+third_party/nvdiffrast/        Vendored GPU renderer source and license
+mycpp/                         Initial-pose clustering extension
+docs/housecat6d.md             Dataset preparation and evaluation details
+tests/                         Unit and regression tests
 ```
 
-两个预测器直接使用独立的输入预处理模块，不再依赖 HDF5 数据集类。权重配置使用 YAML。
+## Environment
 
-## 环境安装
-
-本分支使用 Python 3.12、PyTorch 2.11.0 / torchvision 0.26.0（CUDA 12.8），并更新 Open3D 0.20、NumPy 2.5、Kornia 0.9 和 Warp 1.18。运行依赖版本见 `requirements.txt`。安装前准备可用的 NVIDIA 驱动和 CUDA 12.8 开发工具链。
+The tested environment is Python 3.12, PyTorch 2.11.0 / torchvision 0.26.0 with CUDA 12.8, Open3D 0.20, NumPy 2.5, Kornia 0.9, and Warp 1.18.
 
 ```bash
 conda create -n foundationpose312 python=3.12 -y
@@ -38,97 +45,99 @@ conda activate foundationpose312
 export PYTHONNOUSERSITE=1
 conda install -c conda-forge eigen=3.4.0 cmake boost-cpp -y
 python -m pip install setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
-# 普通包使用清华镜像；CUDA 版 PyTorch 通过 requirements.txt 中的官方额外源获取。
 python -m pip install -r requirements.txt
-# 从仓库内置源码编译 nvdiffrast，并编译 mycpp。
+
+# Compile the vendored nvdiffrast and mycpp extensions.
 CUDA_HOME=/usr/local/cuda-12.8 MAX_JOBS=4 bash build_all.sh
 ```
 
-旋转转换已改为纯 PyTorch 实现，无需额外的三维深度学习工具库。依赖清单只保留当前代码使用的包，不包含 Notebook、纹理展开、资产下载、检测器或实验管理工具。
+`build_all.sh` does not download nvdiffrast from GitHub. It builds the pinned source under `third_party/nvdiffrast/` and then builds the pose-clustering extension. The nvdiffrast source is retained under its upstream license; see `third_party/nvdiffrast/UPSTREAM.md`.
 
-`mycpp` 按解释器分别构建到 `mycpp/build/cpython-312/` 等目录，不会覆盖旧环境的扩展。切换 Python 后需重新运行构建命令。nvdiffrast 0.4.0 已内置到 `third_party/nvdiffrast/`，来源提交为 `253ac4fcea7de5f396371124af597e6cc957bfae`，保留原始许可证与版权声明。运行时源码与上游保持一致，未裁剪 CUDA 内核；省略了示例、文档资源和生成文件。
+For a different GPU, set `TORCH_CUDA_ARCH_LIST` to its CUDA compute capability. For example, the local RTX 5060 Ti uses `12.0`.
 
-`build_all.sh` 先编译并安装内置 nvdiffrast，再编译 `mycpp`。构建阶段不从 GitHub 下载源码，也不联网安装依赖，因此需先完成 `requirements.txt` 的安装，并准备 CMake、C++ 编译器和 CUDA Toolkit。渲染库在临时目录中构建，避免复用不同 Python/PyTorch/CUDA 环境的旧产物；重复执行会重新编译并替换当前环境中的 nvdiffrast。
+## Single-Object Demo
 
-`MAX_JOBS` 控制两个扩展的编译并发数，默认 4。默认检测本机 GPU 架构；在无 GPU 的构建环境中需显式设置 `TORCH_CUDA_ARCH_LIST`（例如 RTX 5060 Ti 使用 `12.0`）。`build_all_conda.sh` 保留为同一脚本的兼容入口，附加参数会传给 `mycpp` 的 CMake 配置。
-
-AMP 调用已更新为 `torch.amp.autocast`，权重按 `weights_only=True` 加载，并移除了推理时修改全局默认张量类型的旧调用。
-
-## Docker
-
-在仓库根目录构建，镜像使用同一份依赖清单：
-
-```bash
-docker build -f docker/dockerfile --build-arg TORCH_CUDA_ARCH_LIST=12.0 -t foundationpose .
-cd docker
-bash run_container.sh
-```
-
-`12.0` 对应本地 RTX 5060 Ti；其他显卡需改为对应的计算能力。Docker 构建时也调用同一脚本编译两个扩展，镜像尚未实际构建验证。首次进入容器后，挂载目录会覆盖镜像中的构建目录，需要在挂载的仓库中执行：
-
-```bash
-bash build_all.sh
-```
-
-## 数据和权重
-
-下载[预训练权重](https://drive.google.com/drive/folders/1DFezOAD0oD1BblsXVxqDsl8fj0qzB82i?usp=sharing)，目录如下：
-
-```text
-weights/2023-10-28-18-33-37/{config.yml,model_best.pth}  # 精修
-weights/2024-01-11-20-02-45/{config.yml,model_best.pth}  # 评分
-```
-
-[演示数据](https://drive.google.com/drive/folders/1pRyFmxYXmAnpku7nGRioZaKrVJtIsroP?usp=sharing)解压到 `demo_data/`，也可以通过命令行指定自己的 CAD 网格和 RGB-D 序列。网格和深度均使用米作为单位。
-
-## 运行
+Download the FoundationPose weights and demo data from the links in the upstream project, then run:
 
 ```bash
 python run_demo.py --mesh_file /path/to/model.obj --test_scene_dir /path/to/rgbd_sequence
-python run_linemod.py --linemod_dir /path/to/linemod/000005
-python run_ycb_video.py --ycbv_dir /path/to/YCB_Video
 ```
 
-`run_demo.py` 保留本地自定义数据集的默认路径。运行时按需指定 `--debug_dir`；位姿输出在该目录的 `ob_in_cam/` 中。
-
-使用计时模式可以关闭显示与调试渲染，分别统计模型准备、首帧初始化和后续跟踪：
+The timing mode reports model setup, first-frame initialization, and subsequent tracking:
 
 ```bash
-python run_demo.py --benchmark --debug_dir debug/python312
+python run_demo.py --benchmark --max_frames 50
 ```
 
-计时前后同步 CUDA，不包含图像读取、结果保存和显示；报告写入 `timing.csv` 和 `timing_summary.json`。首次调用仍可能包含编译、内核加载等开销。
+## HouseCat6D Multi-Object Evaluation
 
-## 检查
+The HouseCat6D reader uses the dataset's `instance/*.png` masks and `labels/*_label.pkl` files. Each object gets its own pose state; detection and cross-frame association are bypassed because the dataset supplies stable IDs.
+
+Prepare `scene01` and copy these five CAD models into `demo_data/scene01/mesh/`:
+
+```text
+box-kleenex
+can-kidney_beans
+cup-green_actys
+cup-new_york_big
+remote-grey
+```
+
+CAD and RGB-D assets are intentionally ignored by Git and are not included in this repository. Copy the metric textured `.obj`, `.mtl`, texture PNG, and `_norm.txt` files from HouseCat6D's `obj_models_small_size_final` directory. See [docs/housecat6d.md](docs/housecat6d.md) for the exact layout and coordinate convention.
+
+```bash
+# Short check
+python run_housecat6d.py --max_frames 3
+
+# Complete scene
+python run_housecat6d.py
+
+# Independent initialization on every frame
+python run_housecat6d.py --mode register --max_frames 3
+```
+
+Results are not written by default. Enable them explicitly:
+
+```bash
+python run_housecat6d.py --save_results
+python run_housecat6d.py --save_vis
+python run_housecat6d.py --realtime    # press q to exit
+```
+
+The metrics are raw, symmetry-unaware ADD, translation, and rotation errors for debugging; they are not the official HouseCat6D benchmark protocol.
+
+The multi-object path keeps the original weights, CAD meshes, candidate count, and refinement iterations. It shares frame-level RGB-D preprocessing, keeps pose tensors on the GPU, caches XYZ pixel grids, and avoids clearing the CUDA allocator between calls.
+
+## Tests
 
 ```bash
 python -m unittest discover -s tests -v
 python run_demo.py --help
-python run_linemod.py --help
-python run_ycb_video.py --help
+python run_housecat6d.py --help
 ```
 
-## 引用与许可
+## 中文说明
 
-```bibtex
-@InProceedings{foundationposewen2024,
-  author = {Bowen Wen, Wei Yang, Jan Kautz, Stan Birchfield},
-  title = {{FoundationPose}: Unified 6D Pose Estimation and Tracking of Novel Objects},
-  booktitle = {CVPR},
-  year = {2024}
-}
-```
+### 项目定位
 
-代码及数据遵循 [NVIDIA Source Code License](LICENSE)。原作者及版权声明保留在源文件中。
+本分支保留基于 CAD 模型的 FoundationPose RGB-D 六维位姿估计与跟踪，并增加 HouseCat6D 多物体离线评估入口。
 
-## HouseCat6D 多物体离线测试
+### 两项主要修改
 
-使用数据集自带的实例 mask 和固定 ID，无需 YOLO。运行前需单独准备 HouseCat6D scene01 和对应五组 CAD 资产；数据目录不纳入 Git。
+1. **Python 3.12 和精简架构**：删除 model-free BundleSDF、Kaolin 和 mycuda 路径；使用 Python 3.12、PyTorch 2.11/CUDA 12.8；旋转转换改为纯 PyTorch；内置 nvdiffrast 源码并由 `build_all.sh` 统一编译。
+2. **HouseCat6D 多物体 6D 位姿**：使用数据集自带的实例 mask 和稳定实例 ID，为每个 CAD 物体维护独立的 FoundationPose 状态，支持初始化、跟踪、实时显示和误差统计，不需要 YOLO。
+
+### 中文运行示例
 
 ```bash
-python run_housecat6d.py --max_frames 3 --save_vis
-# 实时窗口显示，按 q 退出
+conda activate foundationpose312
+python run_housecat6d.py --max_frames 3
+python run_housecat6d.py --save_results
 python run_housecat6d.py --realtime
 ```
 
-完整运行、数据约定和输出说明见 [HouseCat6D 使用说明](docs/housecat6d.md)。
+默认不保存 JSON、CSV、位姿或 PNG 文件；需要保存时显式添加 `--save_results` 或 `--save_vis`。HouseCat6D 的 RGB-D 数据和 CAD 资产不提交到 Git，需要根据 [中文数据说明](docs/housecat6d.md) 单独准备。
+
+## License
+
+The original FoundationPose files and vendored nvdiffrast source retain their respective copyright and license notices. See [LICENSE](LICENSE) and `third_party/nvdiffrast/LICENSE.txt`.

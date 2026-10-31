@@ -1,5 +1,20 @@
 # FoundationPose Python 3.12 Multi-Object
 
+<p align="center">
+  <a href="#english">English</a> | <a href="#中文说明">中文</a>
+</p>
+
+<p align="center">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white">
+  <img alt="PyTorch 2.11" src="https://img.shields.io/badge/PyTorch-2.11-EE4C2C?logo=pytorch&logoColor=white">
+  <img alt="CUDA 12.8" src="https://img.shields.io/badge/CUDA-12.8-76B900?logo=nvidia&logoColor=white">
+  <img alt="FoundationPose" src="https://img.shields.io/badge/FoundationPose-CAD--based-2E7D32">
+  <img alt="HouseCat6D" src="https://img.shields.io/badge/Dataset-HouseCat6D-6A5ACD">
+  <img alt="NVIDIA Source Code License" src="https://img.shields.io/badge/License-NVIDIA%20Source%20Code-555555">
+</p>
+
+## English
+
 This fork keeps the CAD-based FoundationPose pipeline and adds an offline multi-object 6D pose evaluation path for HouseCat6D.
 
 The fork has two major changes:

@@ -9,6 +9,15 @@ export MAX_JOBS=${MAX_JOBS:-4}
 # Fail before compiling if the active environment lacks build dependencies.
 "${PYTHON_BIN}" -c 'import torch, setuptools, wheel, ninja, pybind11'
 
+# opencv-python's Qt build expects a font directory for imshow. Some recent
+# wheels omit it even when the host has system fonts, which causes repetitive
+# QFontDatabase warnings without affecting inference.
+if [ -d /usr/share/fonts/truetype/dejavu ]; then
+  CV2_QT_DIR=$("${PYTHON_BIN}" -c 'import cv2, pathlib; print(pathlib.Path(cv2.__file__).resolve().parent / "qt")')
+  mkdir -p "${CV2_QT_DIR}"
+  ln -sfn /usr/share/fonts/truetype/dejavu "${CV2_QT_DIR}/fonts"
+fi
+
 # Build the vendored renderer offline, without artifacts from another environment.
 BUILD_TMP=$(mktemp -d "${TMPDIR:-/tmp}/foundationpose-build.XXXXXXXX")
 trap 'rm -rf -- "${BUILD_TMP}"' EXIT

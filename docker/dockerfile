@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget git build-essential cmake ninja-build \
     libeigen3-dev libboost-system-dev libboost-program-options-dev \
-    libgl1 libglib2.0-0 libxrender1 libsm6 libxext6 \
+    libgl1 libglib2.0-0 libxrender1 libsm6 libxext6 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh \

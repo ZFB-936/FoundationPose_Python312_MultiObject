@@ -91,6 +91,8 @@ python -m pip install -r requirements.txt
 CUDA_HOME=/usr/local/cuda-12.8 MAX_JOBS=4 bash build_all.sh
 ```
 
+If OpenCV prints `QFontDatabase: Cannot find font directory .../cv2/qt/fonts` when using `--realtime`, run `bash build_all.sh` once after installing system DejaVu fonts. The script links `/usr/share/fonts/truetype/dejavu` into the OpenCV Qt package. Headless inference does not need Qt or fonts.
+
 `build_all.sh` does not download nvdiffrast from GitHub. It builds the pinned source under `third_party/nvdiffrast/` and then builds the pose-clustering extension. The nvdiffrast source is retained under its upstream license; see `third_party/nvdiffrast/UPSTREAM.md`.
 
 For a different GPU, set `TORCH_CUDA_ARCH_LIST` to its CUDA compute capability. For example, the local RTX 5060 Ti uses `12.0`.

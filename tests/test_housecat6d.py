@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from housecat6d import HouseCat6DScene, pose_errors
+from Utils import _pixel_grid, depth2xyzmap_batch
 
 
 class HouseCatTests(unittest.TestCase):
@@ -76,6 +77,19 @@ class HouseCatTests(unittest.TestCase):
         self.assertAlmostEqual(errors['rotation_error_deg'], 0)
         pred[:3, :3] = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
         self.assertAlmostEqual(pose_errors(pred, gt, np.zeros((1, 3)))['rotation_error_deg'], 90)
+
+    def test_cached_xyz_grid_matches_camera_projection(self):
+        depth = np.full((1, 2, 3), 0.5, dtype=np.float32)
+        K = np.eye(3, dtype=np.float32)[None]
+        actual = depth2xyzmap_batch(__import__('torch').from_numpy(depth),
+                                    __import__('torch').from_numpy(K), np.inf)
+        expected = np.array([[[[0., 0., .5], [0.5, 0., .5], [1., 0., .5]],
+                              [[0., .5, .5], [.5, .5, .5], [1., .5, .5]]]], dtype=np.float32)
+        np.testing.assert_allclose(actual.numpy(), expected)
+        first = _pixel_grid(2, 3, 'cpu')
+        second = _pixel_grid(2, 3, 'cpu')
+        self.assertIs(first[0], second[0])
+        self.assertIs(first[1], second[1])
 
 
 if __name__ == '__main__':

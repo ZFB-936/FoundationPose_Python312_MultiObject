@@ -63,11 +63,11 @@ python run_housecat6d.py --mode register --max_frames 3 --debug_dir debug/scene0
 
 每个实例独立保存 `pose_last` 和 CAD 状态，五个实例共享评分网络、精修网络和渲染上下文；推理按实例串行执行。真值位姿只用于误差计算，不用于初始化或跟踪。没有足够可见有效深度时跳过该实例，再出现时重新初始化；它不是遮挡恢复算法，也没有加入漂移检测。如果实例 ID 对应的 CAD 名称发生变化，入口会报错。
 
-可选参数：`--scene_dir`、`--mesh_dir`、`--max_frames`、`--mode track|register`、`--est_refine_iter`、`--track_refine_iter`、`--depth_scale`、`--debug_dir`、`--save_vis`、`--realtime`、`--verbose`。`--realtime` 需要桌面显示环境；按 `q` 退出窗口。
+默认不写 JSON、CSV、位姿或 PNG 文件；只在终端打印帧统计。需要落盘时显式加 `--save_results`，需要图片时加 `--save_vis`；实时窗口使用 `--realtime`，按 `q` 退出。可选参数：`--scene_dir`、`--mesh_dir`、`--max_frames`、`--mode track|register`、`--est_refine_iter`、`--track_refine_iter`、`--depth_scale`、`--debug_dir`、`--save_results`、`--save_vis`、`--realtime`、`--verbose`。
 
 ## 输出
 
-默认目录 `debug/scene01_multi/`：
+加 `--save_results` 后，输出目录默认为 `debug/scene01_multi/`：
 
 - `ob_in_cam/<instance_id>/<frame_id>.txt`：预测的原始网格到相机 4×4 位姿，平移单位为米。
 - `predictions.jsonl`：逐帧逐物体的预测、状态、计时和误差，逐帧写入。
@@ -78,6 +78,10 @@ python run_housecat6d.py --mode register --max_frames 3 --debug_dir debug/scene0
 计时前后同步 CUDA；不包含模型/网格准备、图像读取、评估、保存和绘图。`first_frame_inference_ms` 是五个实例首帧推理之和，后续统计也是每帧所有实例串行推理的总和，不能当作单物体耗时。
 
 当前指标是未经对称性处理的原始 ADD、旋转角度误差和原点平移误差，ADD 对原网格全部顶点取均值。这些是调试指标，不等同于 HouseCat6D 官方评测协议；对称物体可能具有外观等价的多个姿态。
+
+## 工程优化
+
+当前多物体入口保持网络权重、CAD 网格、候选数和精修迭代不变，并做了四项不改变模型计算量的优化：每帧深度过滤和 XYZ 计算只做一次；位姿张量在 GPU 上传给精修器和评分器，完成后才复制一次到 CPU 做评估；移除推理中的 `torch.cuda.empty_cache()`；缓存 `depth2xyzmap_batch` 的像素网格。五个实例仍按 CAD 分别渲染和推理，因此总耗时仍会随实例数近似增长。
 
 ## 本次全场景验证
 

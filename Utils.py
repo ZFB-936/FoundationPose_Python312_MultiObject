@@ -22,6 +22,7 @@ import math,glob,re,copy
 from transformations import *
 from collections import OrderedDict
 import ruamel.yaml
+from functools import lru_cache
 yaml = ruamel.yaml.YAML()
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(code_dir)
@@ -360,6 +361,16 @@ def depth2xyzmap(depth, K, uvs=None):
   return xyz_map
 
 
+@lru_cache(maxsize=16)
+def _pixel_grid(height, width, device):
+  vs, us = torch.meshgrid(
+    torch.arange(height, device=device, dtype=torch.float32),
+    torch.arange(width, device=device, dtype=torch.float32),
+    indexing='ij',
+  )
+  return us.reshape(-1), vs.reshape(-1)
+
+
 def depth2xyzmap_batch(depths, Ks, zfar):
   '''
   @depths: torch tensor (B,H,W)
@@ -368,9 +379,9 @@ def depth2xyzmap_batch(depths, Ks, zfar):
   bs = depths.shape[0]
   invalid_mask = (depths<0.001) | (depths>zfar)
   H,W = depths.shape[-2:]
-  vs,us = torch.meshgrid(torch.arange(0,H),torch.arange(0,W), indexing='ij')
-  vs = vs.reshape(-1).float().cuda()[None].expand(bs,-1)
-  us = us.reshape(-1).float().cuda()[None].expand(bs,-1)
+  us, vs = _pixel_grid(H, W, str(depths.device))
+  vs = vs[None].expand(bs,-1)
+  us = us[None].expand(bs,-1)
   zs = depths.reshape(bs,-1)
   Ks = Ks[:,None].expand(bs,zs.shape[-1],3,3)
   xs = (us-Ks[...,0,2])*zs/Ks[...,0,0]  #(B,N)
@@ -379,6 +390,16 @@ def depth2xyzmap_batch(depths, Ks, zfar):
   xyz_maps = pts.reshape(bs,H,W,3)
   xyz_maps[invalid_mask] = 0
   return xyz_maps
+
+
+def prepare_rgbd_frame(depth, K, device='cuda'):
+  """Filter a depth frame and compute its camera XYZ map once."""
+  filtered = erode_depth(depth, radius=2, device=device)
+  filtered = bilateral_filter_depth(filtered, radius=2, device=device)
+  depth_tensor = torch.as_tensor(filtered, dtype=torch.float32, device=device)
+  K_tensor = torch.as_tensor(K, dtype=torch.float32, device=device)
+  xyz_map = depth2xyzmap_batch(depth_tensor[None], K_tensor[None], zfar=np.inf)[0]
+  return filtered, depth_tensor, xyz_map
 
 
 def depth_to_vis(depth, zmin=None, zmax=None, mode='rgb', inverse=True):

@@ -19,7 +19,8 @@ class FoundationPose:
     self.ignore_normal_flip = True
     self.debug = debug
     self.debug_dir = debug_dir
-    os.makedirs(debug_dir, exist_ok=True)
+    if debug_dir is not None:
+      os.makedirs(debug_dir, exist_ok=True)
 
     self.reset_object(model_pts, model_normals, symmetry_tfs=symmetry_tfs, mesh=mesh)
     self.make_rotation_grid(min_n_views=40, inplane_step=60)
@@ -135,12 +136,19 @@ class FoundationPose:
       return np.zeros((3))
     uc = (us.min()+us.max())/2.0
     vc = (vs.min()+vs.max())/2.0
-    valid = mask.astype(bool) & (depth>=0.001)
-    if not valid.any():
+    if torch.is_tensor(depth):
+      mask_t = torch.as_tensor(mask, device=depth.device, dtype=torch.bool)
+      valid_t = mask_t & (depth >= 0.001)
+      has_valid = bool(valid_t.any().item())
+      zc = float(depth[valid_t].median().item()) if has_valid else 0
+    else:
+      valid = mask.astype(bool) & (depth>=0.001)
+      has_valid = bool(valid.any())
+      zc = float(np.median(depth[valid])) if has_valid else 0
+    if not has_valid:
       logging.info(f"valid is empty")
       return np.zeros((3))
 
-    zc = np.median(depth[valid])
     center = (np.linalg.inv(K)@np.asarray([uc,vc,1]).reshape(3,1))*zc
 
     if self.debug>=2:
@@ -150,7 +158,8 @@ class FoundationPose:
     return center.reshape(3)
 
 
-  def register(self, K, rgb, depth, ob_mask, ob_id=None, glctx=None, iteration=5):
+  def register(self, K, rgb, depth, ob_mask, ob_id=None, glctx=None, iteration=5,
+               depth_processed=False, xyz_map=None, return_tensor=False):
     '''Copmute pose from given pts to self.pcd
     @pts: (N,3) np array, downsampled scene points
     '''
@@ -164,18 +173,22 @@ class FoundationPose:
       else:
         self.glctx = glctx
 
-    depth = erode_depth(depth, radius=2, device='cuda')
-    depth = bilateral_filter_depth(depth, radius=2, device='cuda')
+    if not depth_processed:
+      depth = erode_depth(depth, radius=2, device='cuda')
+      depth = bilateral_filter_depth(depth, radius=2, device='cuda')
 
     if self.debug>=2:
       xyz_map = depth2xyzmap(depth, K)
-      valid = xyz_map[...,2]>=0.001
-      pcd = toOpen3dCloud(xyz_map[valid], rgb[valid])
+      xyz_np = xyz_map.detach().cpu().numpy() if torch.is_tensor(xyz_map) else xyz_map
+      rgb_np = rgb.detach().cpu().numpy() if torch.is_tensor(rgb) else rgb
+      valid = xyz_np[...,2]>=0.001
+      pcd = toOpen3dCloud(xyz_np[valid], rgb_np[valid])
       o3d.io.write_point_cloud(f'{self.debug_dir}/scene_raw.ply',pcd)
       cv2.imwrite(f'{self.debug_dir}/ob_mask.png', (ob_mask*255.0).clip(0,255))
 
     normal_map = None
-    valid = (depth>=0.001) & (ob_mask>0)
+    ob_mask_t = torch.as_tensor(ob_mask, device=depth.device) if torch.is_tensor(depth) else ob_mask
+    valid = (depth>=0.001) & (ob_mask_t>0)
     if valid.sum()<4:
       logging.info(f'valid too small, return')
       pose = np.eye(4)
@@ -183,10 +196,12 @@ class FoundationPose:
       return pose
 
     if self.debug>=2:
-      imageio.imwrite(f'{self.debug_dir}/color.png', rgb)
+      rgb_np = rgb.detach().cpu().numpy() if torch.is_tensor(rgb) else rgb
+      imageio.imwrite(f'{self.debug_dir}/color.png', rgb_np)
       cv2.imwrite(f'{self.debug_dir}/depth.png', (depth*1000).astype(np.uint16))
-      valid = xyz_map[...,2]>=0.001
-      pcd = toOpen3dCloud(xyz_map[valid], rgb[valid])
+      xyz_np = xyz_map.detach().cpu().numpy() if torch.is_tensor(xyz_map) else xyz_map
+      valid = xyz_np[...,2]>=0.001
+      pcd = toOpen3dCloud(xyz_np[valid], rgb_np[valid])
       o3d.io.write_point_cloud(f'{self.debug_dir}/scene_complete.ply',pcd)
 
     self.H, self.W = depth.shape[:2]
@@ -195,22 +210,21 @@ class FoundationPose:
     self.ob_mask = ob_mask
 
     poses = self.generate_random_pose_hypo(K=K, rgb=rgb, depth=depth, mask=ob_mask, scene_pts=None)
-    poses = poses.data.cpu().numpy()
     logging.info(f'poses:{poses.shape}')
     center = self.guess_translation(depth=depth, mask=ob_mask, K=K)
 
-    poses = torch.as_tensor(poses, device='cuda', dtype=torch.float)
     poses[:,:3,3] = torch.as_tensor(center.reshape(1,3), device='cuda')
 
     add_errs = self.compute_add_err_to_gt_pose(poses)
     logging.info(f"after viewpoint, add_errs min:{add_errs.min()}")
 
-    xyz_map = depth2xyzmap(depth, K)
-    poses, vis = self.refiner.predict(mesh=self.mesh, mesh_tensors=self.mesh_tensors, rgb=rgb, depth=depth, K=K, ob_in_cams=poses.data.cpu().numpy(), normal_map=normal_map, xyz_map=xyz_map, glctx=self.glctx, mesh_diameter=self.diameter, iteration=iteration, get_vis=self.debug>=2)
+    if xyz_map is None:
+      xyz_map = depth2xyzmap(depth, K)
+    poses, vis = self.refiner.predict(mesh=self.mesh, mesh_tensors=self.mesh_tensors, rgb=rgb, depth=depth, K=K, ob_in_cams=poses, normal_map=normal_map, xyz_map=xyz_map, glctx=self.glctx, mesh_diameter=self.diameter, iteration=iteration, get_vis=self.debug>=2)
     if vis is not None:
       imageio.imwrite(f'{self.debug_dir}/vis_refiner.png', vis)
 
-    scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K, ob_in_cams=poses.data.cpu().numpy(), normal_map=normal_map, mesh_tensors=self.mesh_tensors, glctx=self.glctx, mesh_diameter=self.diameter, get_vis=self.debug>=2)
+    scores, vis = self.scorer.predict(mesh=self.mesh, rgb=rgb, depth=depth, K=K, ob_in_cams=poses, normal_map=normal_map, mesh_tensors=self.mesh_tensors, glctx=self.glctx, mesh_diameter=self.diameter, get_vis=self.debug>=2)
     if vis is not None:
       imageio.imwrite(f'{self.debug_dir}/vis_score.png', vis)
 
@@ -231,7 +245,7 @@ class FoundationPose:
     self.poses = poses
     self.scores = scores
 
-    return best_pose.data.cpu().numpy()
+    return best_pose if return_tensor else best_pose.data.cpu().numpy()
 
 
   def compute_add_err_to_gt_pose(self, poses):
@@ -241,24 +255,30 @@ class FoundationPose:
     return -torch.ones(len(poses), device='cuda', dtype=torch.float)
 
 
-  def track_one(self, rgb, depth, K, iteration, extra={}):
+  def track_one(self, rgb, depth, K, iteration, extra=None,
+                depth_processed=False, xyz_map=None, return_tensor=False):
+    if extra is None:
+      extra = {}
     if self.pose_last is None:
       logging.info("Please init pose by register first")
       raise RuntimeError
     logging.info("Welcome")
 
     depth = torch.as_tensor(depth, device='cuda', dtype=torch.float)
-    depth = erode_depth(depth, radius=2, device='cuda')
-    depth = bilateral_filter_depth(depth, radius=2, device='cuda')
+    if not depth_processed:
+      depth = erode_depth(depth, radius=2, device='cuda')
+      depth = bilateral_filter_depth(depth, radius=2, device='cuda')
     logging.info("depth processing done")
 
-    xyz_map = depth2xyzmap_batch(depth[None], torch.as_tensor(K, dtype=torch.float, device='cuda')[None], zfar=np.inf)[0]
+    if xyz_map is None:
+      xyz_map = depth2xyzmap_batch(depth[None], torch.as_tensor(K, dtype=torch.float, device='cuda')[None], zfar=np.inf)[0]
 
-    pose, vis = self.refiner.predict(mesh=self.mesh, mesh_tensors=self.mesh_tensors, rgb=rgb, depth=depth, K=K, ob_in_cams=self.pose_last.reshape(1,4,4).data.cpu().numpy(), normal_map=None, xyz_map=xyz_map, mesh_diameter=self.diameter, glctx=self.glctx, iteration=iteration, get_vis=self.debug>=2)
+    pose, vis = self.refiner.predict(mesh=self.mesh, mesh_tensors=self.mesh_tensors, rgb=rgb, depth=depth, K=K, ob_in_cams=self.pose_last.reshape(1,4,4), normal_map=None, xyz_map=xyz_map, mesh_diameter=self.diameter, glctx=self.glctx, iteration=iteration, get_vis=self.debug>=2)
     logging.info("pose done")
     if self.debug>=2:
       extra['vis'] = vis
     self.pose_last = pose
-    return (pose@self.get_tf_to_centered_mesh()).data.cpu().numpy().reshape(4,4)
+    result = (pose@self.get_tf_to_centered_mesh()).reshape(4,4)
+    return result if return_tensor else result.data.cpu().numpy()
 
 

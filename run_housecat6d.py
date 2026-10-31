@@ -12,7 +12,8 @@ import numpy as np
 import torch
 import trimesh
 
-from Utils import dr, draw_posed_3d_box, draw_xyz_axis, set_logging_format, set_seed
+from Utils import (dr, draw_posed_3d_box, draw_xyz_axis, prepare_rgbd_frame,
+                   set_logging_format, set_seed)
 from estimater import FoundationPose
 from housecat6d import HouseCat6DScene, pose_errors
 from learning.inference.predict_pose_refine import PoseRefinePredictor
@@ -34,7 +35,8 @@ def make_state(record, scene, output_dir, scorer, refiner, glctx):
     estimator = FoundationPose(
         model_pts=mesh.vertices.copy(), model_normals=mesh.vertex_normals.copy(),
         mesh=mesh, scorer=scorer, refiner=refiner, glctx=glctx,
-        debug=0, debug_dir=str(output_dir / f"instance_{record['instance_id']}"),
+        debug=0, debug_dir=(str(output_dir / f"instance_{record['instance_id']}")
+                            if output_dir is not None else None),
     )
     return dict(model_name=record['model_name'], mesh=mesh, estimator=estimator,
                 needs_register=True, last_frame=-1)
@@ -65,6 +67,7 @@ def main():
                         help='track: initialize then track; register: independent estimation every frame')
     parser.add_argument('--debug_dir', default='debug/scene01_multi')
     parser.add_argument('--save_vis', action='store_true', help='Save predicted 3D boxes and axes as PNGs')
+    parser.add_argument('--save_results', action='store_true', help='Save JSON/CSV/pose files; disabled by default')
     parser.add_argument('--realtime', action='store_true', help='Show each annotated frame in an OpenCV window')
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
@@ -75,8 +78,10 @@ def main():
     set_seed(0)
     scene = HouseCat6DScene(args.scene_dir, args.mesh_dir, args.depth_scale)
     frame_count = min(args.max_frames, len(scene)) if args.max_frames else len(scene)
-    output_dir = Path(args.debug_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    save_outputs = args.save_results or args.save_vis
+    output_dir = Path(args.debug_dir) if save_outputs or args.realtime else None
+    if save_outputs or args.realtime:
+        output_dir.mkdir(parents=True, exist_ok=True)
     if args.save_vis:
         (output_dir / 'vis').mkdir(exist_ok=True)
 
@@ -88,9 +93,11 @@ def main():
     objects, predictions, setup_records, frame_timings = {}, [], [], []
     processed_frames = 0
     print(f'Networks and renderer ready: {network_setup_ms:.1f} ms', flush=True)
-    with (output_dir / 'predictions.jsonl').open('w') as stream:
-        for frame_index in range(frame_count):
+    stream = (output_dir / 'predictions.jsonl').open('w') if args.save_results else None
+    for frame_index in range(frame_count):
             rgb, depth, instance_image, labels = scene.frame(frame_index)
+            depth_filtered, depth_tensor, xyz_map = prepare_rgbd_frame(depth, scene.K)
+            rgb_tensor = torch.as_tensor(rgb, device='cuda')
             frame_id = scene.frame_ids[frame_index]
             vis = rgb.copy() if args.save_vis or args.realtime else None
             frame_rows = []
@@ -103,7 +110,7 @@ def main():
                            pose=None, add_error_m=None, translation_error_m=None,
                            rotation_error_deg=None, reason=None)
                 # Skip invisible/invalid observations, and reinitialize on reappearance.
-                if np.count_nonzero(mask & (depth >= 0.001)) < 4:
+                if np.count_nonzero(mask & (depth_filtered >= 0.001)) < 4:
                     if iid in objects:
                         objects[iid]['needs_register'] = True
                     row['reason'] = 'insufficient_visible_depth'
@@ -119,35 +126,41 @@ def main():
                     if args.mode == 'register' or state['needs_register'] or state['last_frame'] != frame_index - 1:
                         # GT transforms are used only below for evaluation, never initialization.
                         estimator.pose_last = None
-                        pose, elapsed = timed_call(estimator.register, scene.K, rgb, depth, mask,
-                                                   iteration=args.est_refine_iter)
+                        pose, elapsed = timed_call(estimator.register, scene.K, rgb_tensor, depth_tensor, mask,
+                                                   iteration=args.est_refine_iter, depth_processed=True,
+                                                   xyz_map=xyz_map, return_tensor=True)
                         stage = 'register'
                     else:
-                        pose, elapsed = timed_call(estimator.track_one, rgb, depth, scene.K,
-                                                   iteration=args.track_refine_iter)
+                        pose, elapsed = timed_call(estimator.track_one, rgb_tensor, depth_tensor, scene.K,
+                                                   iteration=args.track_refine_iter, depth_processed=True,
+                                                   xyz_map=xyz_map, return_tensor=True)
                         stage = 'track'
-                    if not np.isfinite(pose).all() or estimator.pose_last is None:
+                    pose_np = pose.detach().cpu().numpy()
+                    if not np.isfinite(pose_np).all() or estimator.pose_last is None:
                         state['needs_register'] = True
                         row.update(reason='invalid_pose', elapsed_ms=elapsed)
                     else:
                         state.update(needs_register=False, last_frame=frame_index)
-                        row.update(stage=stage, elapsed_ms=elapsed, pose=np.asarray(pose).tolist(),
-                                   **pose_errors(pose, record['pose_gt'], state['mesh'].vertices))
-                        pose_dir = output_dir / 'ob_in_cam' / str(iid)
-                        pose_dir.mkdir(parents=True, exist_ok=True)
-                        np.savetxt(pose_dir / f'{frame_id}.txt', pose)
+                        row.update(stage=stage, elapsed_ms=elapsed, pose=pose_np.tolist(),
+                                   **pose_errors(pose_np, record['pose_gt'], state['mesh'].vertices))
+                        if args.save_results:
+                            pose_dir = output_dir / 'ob_in_cam' / str(iid)
+                            pose_dir.mkdir(parents=True, exist_ok=True)
+                            np.savetxt(pose_dir / f'{frame_id}.txt', pose_np)
                         if vis is not None:
                             color = tuple(int(c) for c in ((iid * 73) % 200 + 55, (iid * 127) % 200 + 55, (iid * 179) % 200 + 55))
-                            vis = draw_posed_3d_box(scene.K, vis, pose, state['mesh'].bounds,
+                            vis = draw_posed_3d_box(scene.K, vis, pose_np, state['mesh'].bounds,
                                                   line_color=color)
-                            vis = draw_xyz_axis(vis, pose, scale=0.04, K=scene.K, is_input_rgb=True)
-                            center = scene.K @ pose[:3, 3]
+                            vis = draw_xyz_axis(vis, pose_np, scale=0.04, K=scene.K, is_input_rgb=True)
+                            center = scene.K @ pose_np[:3, 3]
                             uv = tuple(np.clip(center[:2] / max(center[2], 1e-6), -10000, 10000).astype(int))
                             cv2.putText(vis, f'{iid}: {record["model_name"]}', uv,
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
                 frame_rows.append(row)
-                stream.write(json.dumps(row, allow_nan=False) + '\n')
-            stream.flush()
+                if stream is not None:
+                    stream.write(json.dumps(row, allow_nan=False) + '\n')
+            if stream is not None:
+                stream.flush()
             predictions.extend(frame_rows)
             frame_ms = sum(row['elapsed_ms'] or 0 for row in frame_rows)
             frame_timings.append(frame_ms)
@@ -175,13 +188,17 @@ def main():
                    notes=['GT masks and IDs bypass detection and association; GT poses are evaluation-only.',
                           'Metrics are raw ADD/rotation/translation, not the official symmetry-aware HouseCat6D protocol.',
                           'Synchronized inference timings exclude setup, data loading, evaluation, saving and visualization.'])
-    (output_dir / 'summary.json').write_text(json.dumps(summary, indent=2, allow_nan=False))
-    fields = [k for k in predictions[0] if k != 'pose']
-    with (output_dir / 'metrics.csv').open('w', newline='') as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(predictions)
-    print(f'Results saved to {output_dir.resolve()}', flush=True)
+    if stream is not None:
+        stream.close()
+    if args.save_results:
+        (output_dir / 'summary.json').write_text(json.dumps(summary, indent=2, allow_nan=False))
+        fields = [k for k in predictions[0] if k != 'pose']
+        with (output_dir / 'metrics.csv').open('w', newline='') as stream_out:
+            writer = csv.DictWriter(stream_out, fieldnames=fields, extrasaction='ignore')
+            writer.writeheader()
+            writer.writerows(predictions)
+        print(f'Results saved to {output_dir.resolve()}', flush=True)
+    print(json.dumps(summary, indent=2, allow_nan=False), flush=True)
     if args.realtime:
         cv2.destroyAllWindows()
 

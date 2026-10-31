@@ -24,6 +24,31 @@ The fork has two major changes:
 
 The upstream project is [NVlabs/FoundationPose](https://github.com/NVlabs/FoundationPose), presented at CVPR 2024. This fork is intended for known CAD models and RGB-D input; it does not solve object detection by itself.
 
+## Changes from Upstream
+
+| Area | Upstream FoundationPose | This fork |
+| --- | --- | --- |
+| Python/runtime | Older Conda/PyTorch combinations documented | Python 3.12, PyTorch 2.11, CUDA 12.8 |
+| Operating modes | Model-based and model-free BundleSDF paths | CAD-based model path only |
+| Model-free dependencies | BundleSDF, Kaolin, and `bundlesdf/mycuda` | Removed |
+| Rotation dependency | PyTorch3D transforms | Pure PyTorch conversions in `learning/rotation.py` |
+| NVDiffRast | Installed separately from GitHub | Pinned source vendored under `third_party/nvdiffrast/` and built locally |
+| Data path | Single-object demos and benchmark readers | Adds HouseCat6D multi-object evaluation using dataset masks and IDs |
+| Multi-object tracking | No dedicated multi-object entry point | Independent pose state per CAD instance, with optional real-time visualization |
+
+The refinement and scoring network architectures, checkpoint names, and CAD render-and-compare design are retained. This is an engineering fork, not a newly trained model release.
+
+## Performance Reference
+
+Reported tracking benchmark for a 736-frame sequence:
+
+```text
+Tracking (736 frames): mean=14.64 ms, median=13.70 ms,
+P95=19.51 ms, FPS=68.31
+```
+
+This is a reference for this fork, not a controlled upstream comparison. Reproduce it with the same GPU, Python/PyTorch/CUDA versions, CAD assets, image resolution, refinement iterations, and measurement scope before comparing against another checkout. The `run_demo.py --benchmark` timing scope excludes image loading, result writing, and display.
+
 ## Features
 
 - Python 3.12 and CUDA 12.8 environment.
@@ -136,6 +161,30 @@ python run_housecat6d.py --help
 ### 项目定位
 
 本分支保留基于 CAD 模型的 FoundationPose RGB-D 六维位姿估计与跟踪，并增加 HouseCat6D 多物体离线评估入口。
+
+### 与原仓库的对比
+
+| 方面 | 原始 FoundationPose | 当前分支 |
+| --- | --- | --- |
+| Python/运行环境 | 文档中使用较旧的 Conda/PyTorch 组合 | Python 3.12、PyTorch 2.11、CUDA 12.8 |
+| 工作模式 | model-based + model-free BundleSDF | 只保留 CAD model-based |
+| model-free 依赖 | BundleSDF、Kaolin、`bundlesdf/mycuda` | 已删除 |
+| 旋转变换 | 依赖 PyTorch3D transforms | `learning/rotation.py` 中的纯 PyTorch 实现 |
+| NVDiffRast | 从 GitHub 单独安装 | 固定源码内置在 `third_party/nvdiffrast/` 并统一编译 |
+| 多物体入口 | 没有专用多物体入口 | 新增 HouseCat6D 多物体评估、独立实例状态和实时显示 |
+
+精修器和评分器网络结构、预训练权重命名以及 CAD 渲染比较流程保持不变；当前分支是工程精简和多物体评估扩展，不是重新训练的新模型。
+
+### 性能参考
+
+一次 736 帧序列跟踪运行报告的结果：
+
+```text
+Tracking (736 frames): mean=14.64 ms, median=13.70 ms,
+P95=19.51 ms, FPS=68.31
+```
+
+该结果是当前分支的参考值，不是与上游进行的受控对比。比较不同版本时，应保持 GPU、Python/PyTorch/CUDA、CAD 资产、图像分辨率、精修迭代次数和计时范围一致。`run_demo.py --benchmark` 的计时不包含图像读取、结果保存和显示。
 
 ### 两项主要修改
 

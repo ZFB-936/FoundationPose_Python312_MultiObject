@@ -120,3 +120,15 @@ python run_ycb_video.py --help
 ```
 
 代码及数据遵循 [NVIDIA Source Code License](LICENSE)。原作者及版权声明保留在源文件中。
+
+## HouseCat6D 多物体离线测试
+
+使用数据集自带的实例 mask 和固定 ID，无需 YOLO。运行前需单独准备 HouseCat6D scene01 和对应五组 CAD 资产；数据目录不纳入 Git。
+
+```bash
+python run_housecat6d.py --max_frames 3 --save_vis
+# 实时窗口显示，按 q 退出
+python run_housecat6d.py --realtime
+```
+
+完整运行、数据约定和输出说明见 [HouseCat6D 使用说明](docs/housecat6d.md)。

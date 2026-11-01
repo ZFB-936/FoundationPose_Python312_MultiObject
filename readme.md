@@ -28,8 +28,8 @@ The upstream project is [NVlabs/FoundationPose](https://github.com/NVlabs/Founda
 
 | Multi-object 6D pose estimation | Single-object 6D pose estimation on Ubuntu 24 / RTX 5060 Ti |
 | --- | --- |
-| [![Multi-object 6D pose estimation](https://i1.hdslb.com/bfs/archive/435568b31b15dbda2cc3802abb770ebd4a8fa7e3.jpg)](https://www.bilibili.com/video/BV1Kbx163EJi/) | [![Single-object FoundationPose on Ubuntu 24 and RTX 5060 Ti](https://i1.hdslb.com/bfs/archive/c45fb0965d825da2bdcafe63a42dd8092d7150af.jpg)](https://www.bilibili.com/video/BV1VVx16HEea/) |
-| [Watch on Bilibili](https://www.bilibili.com/video/BV1Kbx163EJi/) | [Watch on Bilibili](https://www.bilibili.com/video/BV1VVx16HEea/) |
+| <iframe src="https://player.bilibili.com/player.html?bvid=BV1Kbx163EJi&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen="true" width="100%" height="360"></iframe> | <iframe src="https://player.bilibili.com/player.html?bvid=BV1VVx16HEea&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen="true" width="100%" height="360"></iframe> |
+| [Open on Bilibili](https://www.bilibili.com/video/BV1Kbx163EJi/) | [Open on Bilibili](https://www.bilibili.com/video/BV1VVx16HEea/) |
 
 ## Changes from Upstream
 
@@ -171,8 +171,8 @@ python run_housecat6d.py --help
 
 | 多目标 6D 位姿估计 | Ubuntu 24 / RTX 5060 Ti 单目标 6D 位姿估计 |
 | --- | --- |
-| [![多目标 6D 位姿估计](https://i1.hdslb.com/bfs/archive/435568b31b15dbda2cc3802abb770ebd4a8fa7e3.jpg)](https://www.bilibili.com/video/BV1Kbx163EJi/) | [![Ubuntu 24 与 RTX 5060 Ti 上的单目标位姿估计](https://i1.hdslb.com/bfs/archive/c45fb0965d825da2bdcafe63a42dd8092d7150af.jpg)](https://www.bilibili.com/video/BV1VVx16HEea/) |
-| [哔哩哔哩观看](https://www.bilibili.com/video/BV1Kbx163EJi/) | [哔哩哔哩观看](https://www.bilibili.com/video/BV1VVx16HEea/) |
+| <iframe src="https://player.bilibili.com/player.html?bvid=BV1Kbx163EJi&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen="true" width="100%" height="360"></iframe> | <iframe src="https://player.bilibili.com/player.html?bvid=BV1VVx16HEea&page=1&high_quality=1&danmaku=0" scrolling="no" frameborder="0" allowfullscreen="true" width="100%" height="360"></iframe> |
+| [哔哩哔哩原视频](https://www.bilibili.com/video/BV1Kbx163EJi/) | [哔哩哔哩原视频](https://www.bilibili.com/video/BV1VVx16HEea/) |
 
 ### 项目定位
 

@@ -1,7 +1,7 @@
 # FoundationPose Python 3.12 Multi-Object
 
 <p align="center">
-  <a href="#english">English</a> | <a href="#中文说明">中文</a>
+  <a href="#english">English</a> | <a href="#中文说明">中文</a> | <a href="#视频演示">视频演示 / Videos</a>
 </p>
 
 <p align="center">
@@ -23,6 +23,13 @@ The fork has two major changes:
 2. **HouseCat6D multi-object pose estimation.** The new `run_housecat6d.py` reads HouseCat6D's per-frame instance masks and stable instance IDs, runs an independent FoundationPose state for each CAD object, and reports pose and timing metrics. It does not require YOLO or an instance-ID tracker for this dataset evaluation.
 
 The upstream project is [NVlabs/FoundationPose](https://github.com/NVlabs/FoundationPose), presented at CVPR 2024. This fork is intended for known CAD models and RGB-D input; it does not solve object detection by itself.
+
+## Video Demos
+
+| Multi-object 6D pose estimation | Single-object 6D pose estimation on Ubuntu 24 / RTX 5060 Ti |
+| --- | --- |
+| [![Multi-object 6D pose estimation](https://i1.hdslb.com/bfs/archive/435568b31b15dbda2cc3802abb770ebd4a8fa7e3.jpg)](https://www.bilibili.com/video/BV1Kbx163EJi/) | [![Single-object FoundationPose on Ubuntu 24 and RTX 5060 Ti](https://i1.hdslb.com/bfs/archive/c45fb0965d825da2bdcafe63a42dd8092d7150af.jpg)](https://www.bilibili.com/video/BV1VVx16HEea/) |
+| [Watch on Bilibili](https://www.bilibili.com/video/BV1Kbx163EJi/) | [Watch on Bilibili](https://www.bilibili.com/video/BV1VVx16HEea/) |
 
 ## Changes from Upstream
 
@@ -159,6 +166,13 @@ python run_housecat6d.py --help
 ```
 
 ## 中文说明
+
+### 视频演示
+
+| 多目标 6D 位姿估计 | Ubuntu 24 / RTX 5060 Ti 单目标 6D 位姿估计 |
+| --- | --- |
+| [![多目标 6D 位姿估计](https://i1.hdslb.com/bfs/archive/435568b31b15dbda2cc3802abb770ebd4a8fa7e3.jpg)](https://www.bilibili.com/video/BV1Kbx163EJi/) | [![Ubuntu 24 与 RTX 5060 Ti 上的单目标位姿估计](https://i1.hdslb.com/bfs/archive/c45fb0965d825da2bdcafe63a42dd8092d7150af.jpg)](https://www.bilibili.com/video/BV1VVx16HEea/) |
+| [哔哩哔哩观看](https://www.bilibili.com/video/BV1Kbx163EJi/) | [哔哩哔哩观看](https://www.bilibili.com/video/BV1VVx16HEea/) |
 
 ### 项目定位
 
